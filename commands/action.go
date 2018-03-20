@@ -56,6 +56,7 @@ const (
 	DEFAULT           = "default"
 	BLACKBOX          = "blackbox"
 	SEQUENCE          = "sequence"
+        PROJECTION        = "projection"
 	FETCH_CODE        = true
 	DO_NOT_FETCH_CODE = false
 )
@@ -386,7 +387,10 @@ func parseAction(cmd *cobra.Command, args []string, update bool) (*whisk.Action,
 
 	paramArgs = Flags.common.param
 	annotArgs = Flags.common.annotation
-
+        fmt.Println (paramArgs)
+        fmt.Println (annotArgs)
+        fmt.Println (args)
+        
 	if len(paramArgs) > 0 {
 		if parameters, err = getJSONFromStrings(paramArgs, true); err != nil {
 			return nil, getJSONFromStringsParamError(paramArgs, true, err)
@@ -409,6 +413,7 @@ func parseAction(cmd *cobra.Command, args []string, update bool) (*whisk.Action,
 	}
 
 	if Flags.action.copy {
+                fmt.Println("Flags.action.copy");
 		var copiedQualifiedName = new(QualifiedName)
 
 		if copiedQualifiedName, err = NewQualifiedName(args[1]); err != nil {
@@ -433,7 +438,25 @@ func parseAction(cmd *cobra.Command, args []string, update bool) (*whisk.Action,
 		} else {
 			return nil, noArtifactError()
 		}
+	} else if Flags.action.projection {
+		if len(args) == 2 {
+                        var code string
+			action.Exec = new(whisk.Exec)
+			action.Exec.Kind = PROJECTION
+			action.Exec.Components = csvToQualifiedActions(args[1])
+                        code, err = ReadFile ("projection.js")
+                        
+                        if err != nil {
+                                fmt.Println (err)
+                                return nil, noArtifactError ()
+                        }
+                        
+                        action.Exec.Code = &code
+		} else {
+			return nil, noArtifactError()
+		}
 	} else if len(args) > 1 || len(Flags.action.docker) > 0 {
+                fmt.Println ("len(args) > 1")
 		action.Exec, err = getExec(args, Flags.action)
 		if err != nil {
 			return nil, err
@@ -477,7 +500,6 @@ func getExec(args []string, params ActionFlags) (*whisk.Exec, error) {
 		if ext == ZIP_EXT || ext == JAVA_EXT {
 			code = base64.StdEncoding.EncodeToString([]byte(code))
 		}
-
 		exec.Code = &code
 	} else if len(args) == 1 && len(docker) == 0 {
 		return nil, noArtifactError()
@@ -1048,6 +1070,7 @@ func init() {
 	actionCreateCmd.Flags().StringVar(&Flags.action.docker, "docker", "", wski18n.T("use provided docker image (a path on DockerHub) to run the action"))
 	actionCreateCmd.Flags().BoolVar(&Flags.action.copy, "copy", false, wski18n.T("treat ACTION as the name of an existing action"))
 	actionCreateCmd.Flags().BoolVar(&Flags.action.sequence, "sequence", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
+        actionCreateCmd.Flags().BoolVar(&Flags.action.projection, "projection", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
 	actionCreateCmd.Flags().StringVar(&Flags.action.kind, "kind", "", wski18n.T("the `KIND` of the action runtime (example: swift:default, nodejs:default)"))
 	actionCreateCmd.Flags().StringVar(&Flags.action.main, "main", "", wski18n.T("the name of the action entry point (function or fully-qualified method name when applicable)"))
 	actionCreateCmd.Flags().IntVarP(&Flags.action.timeout, TIMEOUT_FLAG, "t", TIMEOUT_LIMIT, wski18n.T("the timeout `LIMIT` in milliseconds after which the action is terminated"))
@@ -1063,6 +1086,7 @@ func init() {
 	actionUpdateCmd.Flags().StringVar(&Flags.action.docker, "docker", "", wski18n.T("use provided docker image (a path on DockerHub) to run the action"))
 	actionUpdateCmd.Flags().BoolVar(&Flags.action.copy, "copy", false, wski18n.T("treat ACTION as the name of an existing action"))
 	actionUpdateCmd.Flags().BoolVar(&Flags.action.sequence, "sequence", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
+        actionUpdateCmd.Flags().BoolVar(&Flags.action.projection, "projection", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
 	actionUpdateCmd.Flags().StringVar(&Flags.action.kind, "kind", "", wski18n.T("the `KIND` of the action runtime (example: swift:default, nodejs:default)"))
 	actionUpdateCmd.Flags().StringVar(&Flags.action.main, "main", "", wski18n.T("the name of the action entry point (function or fully-qualified method name when applicable)"))
 	actionUpdateCmd.Flags().IntVarP(&Flags.action.timeout, TIMEOUT_FLAG, "t", TIMEOUT_LIMIT, wski18n.T("the timeout `LIMIT` in milliseconds after which the action is terminated"))
