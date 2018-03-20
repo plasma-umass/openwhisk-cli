@@ -134,6 +134,7 @@ type ActionFlags struct {
 	copy     bool
 	web      string
 	sequence bool
+        projection bool
 	timeout  int
 	memory   int
 	logsize  int
