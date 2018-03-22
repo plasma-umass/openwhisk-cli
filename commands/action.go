@@ -57,6 +57,7 @@ const (
 	BLACKBOX          = "blackbox"
 	SEQUENCE          = "sequence"
         PROJECTION        = "projection"
+        FORK              = "fork"
 	FETCH_CODE        = true
 	DO_NOT_FETCH_CODE = false
 )
@@ -435,7 +436,7 @@ func parseAction(cmd *cobra.Command, args []string, update bool) (*whisk.Action,
 			return nil, noArtifactError()
 		}
 	} else if Flags.action.projection {
-                if len(args) == 3 {
+                if len(args) == 2 {
                         var code string
                         action.Exec = new(whisk.Exec)
                         action.Exec.Kind = PROJECTION
@@ -444,7 +445,15 @@ func parseAction(cmd *cobra.Command, args []string, update bool) (*whisk.Action,
                                 return nil, noArtifactError ()
                         }
                         action.Exec.Code = &code
-                        action.Exec.Components = csvToQualifiedActions(args[2])
+                } else {
+                        return nil, noArtifactError ()
+                }
+                
+        } else if Flags.action.fork {
+                if len(args) == 2 {
+                        action.Exec = new(whisk.Exec)
+                        action.Exec.Kind = FORK
+                        action.Exec.Components = csvToQualifiedActions(args[1])
                         if (len (action.Exec.Components) > 1) {
                                 fmt.Println ("Number of Components for Projection cannot be more than one")
                                 return nil, noArtifactError ()
@@ -452,7 +461,7 @@ func parseAction(cmd *cobra.Command, args []string, update bool) (*whisk.Action,
                 } else {
                         return nil, noArtifactError ()
                 }
-                
+        
         } else if len(args) > 1 || len(Flags.action.docker) > 0 {
 		action.Exec, err = getExec(args, Flags.action)
 		if err != nil {
@@ -1069,6 +1078,7 @@ func init() {
 	actionCreateCmd.Flags().BoolVar(&Flags.action.copy, "copy", false, wski18n.T("treat ACTION as the name of an existing action"))
 	actionCreateCmd.Flags().BoolVar(&Flags.action.sequence, "sequence", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
         actionCreateCmd.Flags().BoolVar(&Flags.action.projection, "projection", false, wski18n.T("treat ACTION as a projection with action name and schema code "))
+        actionCreateCmd.Flags().BoolVar(&Flags.action.fork, "fork", false, wski18n.T("treat ACTION as a fork with action name "))
 	actionCreateCmd.Flags().StringVar(&Flags.action.kind, "kind", "", wski18n.T("the `KIND` of the action runtime (example: swift:default, nodejs:default)"))
 	actionCreateCmd.Flags().StringVar(&Flags.action.main, "main", "", wski18n.T("the name of the action entry point (function or fully-qualified method name when applicable)"))
 	actionCreateCmd.Flags().IntVarP(&Flags.action.timeout, TIMEOUT_FLAG, "t", TIMEOUT_LIMIT, wski18n.T("the timeout `LIMIT` in milliseconds after which the action is terminated"))
@@ -1085,6 +1095,7 @@ func init() {
 	actionUpdateCmd.Flags().BoolVar(&Flags.action.copy, "copy", false, wski18n.T("treat ACTION as the name of an existing action"))
 	actionUpdateCmd.Flags().BoolVar(&Flags.action.sequence, "sequence", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
         actionUpdateCmd.Flags().BoolVar(&Flags.action.projection, "projection", false, wski18n.T("treat ACTION as a projection with action name and schema code "))
+        actionUpdateCmd.Flags().BoolVar(&Flags.action.fork, "fork", false, wski18n.T("treat ACTION as a fork with action name and schema code "))
 	actionUpdateCmd.Flags().StringVar(&Flags.action.kind, "kind", "", wski18n.T("the `KIND` of the action runtime (example: swift:default, nodejs:default)"))
 	actionUpdateCmd.Flags().StringVar(&Flags.action.main, "main", "", wski18n.T("the name of the action entry point (function or fully-qualified method name when applicable)"))
 	actionUpdateCmd.Flags().IntVarP(&Flags.action.timeout, TIMEOUT_FLAG, "t", TIMEOUT_LIMIT, wski18n.T("the timeout `LIMIT` in milliseconds after which the action is terminated"))
