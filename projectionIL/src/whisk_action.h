@@ -3,6 +3,8 @@
 #ifndef __WHISK_ACTION_H__
 #define __WHISK_ACTION_H__
 
+#define WHISK_FORK_NAME_LENGTH 10
+
 class WhiskAction
 {
 private:
@@ -21,6 +23,10 @@ class WhiskSequence : public WhiskAction
 private:
   vector<WhiskAction*> actions;
 public:
+  WhiskSequence(std::string name) : WhiskSequence (name)
+  {
+  }
+  
   WhiskSequence(std::string name, vector<WhiskAction*> _actions) : WhiskAction(name), actions(_actions)
   {
   }

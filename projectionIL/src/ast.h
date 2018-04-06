@@ -32,7 +32,7 @@
 /* Updated Grammar
  * cmd := return jsonexp | complexCmd
  * complexCommand := simpleCmd | simpleCmd; complexCmd
- * simpleCmd := id <- a(jsonexp) | id <- jsonexp | let x = jsonexp
+ * simpleCmd := id <- a(id) | id <- jsonexp | let x = jsonexp
  * jsonexp := id | input | [jsonexp_1, ..., jsonexp_n] | {str1: jsonexp_1, ..., strN:jsonexp_n} | jsonexp pat | c
  * pat = [n] | .field | ["str"]
  * 
@@ -68,13 +68,14 @@ class ASTVisitor
 
 class ASTNode
 {
-public:
-  virtual void convert (WhiskSequence* seq) = 0;
+protected:
+  ASTNode () {}
 };
 
 class JSONExpression : public ASTNode
 {
 public:
+  virtual std::string JSONExpression () = 0;
 };
 
 class JSONIdentifier : public JSONExpression
@@ -91,9 +92,9 @@ public:
   
   void setCallStmt(CallAction* _callStmt) {callStmt = _callStmt;}
   
-  virtual void convert (WhiskSequence* seq)
+  virtual WhiskAction* convert ()
   {
-    
+    return ".saved.output_"+callStmt->getForkName ();
   }
 };
 
@@ -103,6 +104,8 @@ class Command : public ASTNode
 
 class SimpleCommand : public Command
 {
+public:
+  virtual WhiskAction* convert () = 0;
 };
 
 class ComplexCommand : public Command
@@ -117,9 +120,16 @@ public:
   
   const vector<SimpleCommand*>& getSimpleCommands() {return cmds;}
   
-  virtual void convert ()
+  virtual WhiskAction* convert ()
   {
+    vector<WhiskAction*> actions;
     
+    for (auto cmd : cmds) {
+      actions.push_back (convert (cmd));
+    }
+    
+    return new WhiskSequence ("SEQUENCE" + get_random_str (WHISK_SEQ_NAME_LENGTH), 
+                              actions);
   }
 };
 
@@ -135,9 +145,10 @@ public:
   
   const JSONExpression* getReturnExpr() {return exp;}
   
-  virtual void convert ()
+  virtual WhiskAction* convert ()
   {
-    
+    return WhiskProjection ("Proj_" + get_random_str (WHISK_PROJ_NAME_LENGTH), 
+                            convert(getReturnExpr ()));
   }
 };
 
@@ -146,11 +157,12 @@ class CallAction : public SimpleCommand
 private:
   JSONIdentifier* retVal;
   ActionName actionName;
-  JSONExpression* arg;
+  JSONIdentifier* arg;
   static int callID;
+  std::string forkName;
   
 public:
-  CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONExpression* _arg) : 
+  CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONIdentifier* _arg) : 
     retVal(retVal), actionName (_actionName), arg(_arg) 
   {
     retVal->setCallStmt(this);
@@ -159,7 +171,16 @@ public:
   
   const JSONIdentifier* getReturnValue() {return retVal;}
   const ActionName& getActionName() {return actionName;}
-  const JSONExpression* getArgument() {return arg;}
+  const JSONIdentifier* getArgument() {return arg;}
+  std::string getForkName() {return forkName;}
+  
+  virtual WhiskAction* convert ()
+  {
+    forkName = "Fork_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+    
+    return new WhiskFork ("Fork_" + gen_random_str(WHISK_FORK_NAME_LENGTH), 
+                          getActionName ());
+  }
 };
 
 class JSONTransformation : public SimpleCommand
@@ -178,6 +199,15 @@ public:
   const JSONIdentifier* getOutput() {return out;}
   const JSONIdentifier* getInput() {return in;}
   const JSONIdentifier* getTransformation() {return transformation;}
+  
+  virtual WhiskAction* convert ()
+  {
+    std::string code;
+    
+    code = transformation->convert ();
+    
+    return new WhiskProjection ("Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH), code);
+  }
 }
 
 //~ class LetCommand : public SimpleCommand
@@ -207,15 +237,26 @@ public:
   NumberExpression (float _number) :number(_number)
   {
   }
+  
+  virtual std::string convert ()
+  {
+    return std::to_string (number);
+  }
 };
 
 class StringExpression : public ConstantExpression
 {
 private:
   std::string str;
+  
 public:
   StringExpression (std::string _str) : str(_str) 
   {
+  }
+  
+  virtual std::string convert ()
+  {
+    return str;
   }
 };
 
@@ -223,9 +264,20 @@ class BooleanExpression : public ConstantExpression
 {
 private:
   bool boolean;
+  
 public:
   BooleanExpression (bool _boolean) : boolean(_boolean) 
   {
+  }
+  
+  virtual std::string convert ()
+  {
+    if (boolean) {
+      return "True";
+    }
+    else {
+      return "False";
+    }
   }
 };
 
@@ -237,6 +289,19 @@ private:
 public:
   JSONArrayExpression (vector<JSONExpression*> _exprs): exprs(_exprs) 
   {
+  }
+  
+  virtual std::string convert ()
+  {
+    std::string to_ret;
+    
+    to_ret = "[";
+    
+    for (auto expr : exprs) {
+      to_ret += convert (expr);
+    }
+    
+    to_ret = "]";
   }
 };
 
@@ -261,6 +326,21 @@ public:
   JSONObjectExpression (vector<KeyValuePair*> _kvpairs) : kvpairs(_kvpairs) 
   {
   }
+  
+  virtual std::string convert ()
+  {
+    std::string to_ret;
+    
+    to_ret = "{";
+    
+    for (auto kvpair : kvpairs) {
+      to_ret = "\"" + kvpair->getKey () + "\":" + convert (kvpair->getValue ()); 
+    }
+    
+    to_ret = "}";
+    
+    return to_ret;
+  }
 };
 
 class Input : public JSONIdentifier 
@@ -271,6 +351,8 @@ public:
 
 class Pattern : public ASTNode
 {
+public:
+  virtual std::string convert () = 0;
 };
 
 class PatternApplication : public JSONExpression
@@ -278,8 +360,20 @@ class PatternApplication : public JSONExpression
 private:
   JSONExpression* _expr;
   Pattern* _pat;
+  
 public:
   PatternApplication (JSONExpression* _expr, Pattern* _pat): expr(_expr), pat(_pat)
+  {
+  }
+  
+  Pattern* getPattern () {return pat;}
+  
+  JSONExpression* getExpression () {return expr;}
+  
+  virtual std::string convert () 
+  {
+    return convert (getExpression ()) + convert (getPattern ());
+  }
 };
 
 class FieldGet : public Pattern
@@ -290,6 +384,11 @@ private:
 public:
   FieldGet (std::string _fieldName) : fieldName(_fieldName) 
   {
+  }
+  
+  virtual std::string convert ()
+  {
+    return "." + fieldName;
   }
 };
 
@@ -302,6 +401,11 @@ public:
   ArrayIndex (int _index) : index(_index) 
   {
   }
+  
+  virtual std::string convert ()
+  {
+    return "[" + std::to_string (index) + "]";
+  }
 };
 
 class KeyGet : public Pattern
@@ -312,6 +416,11 @@ private:
 public:
   KeyGet (std::string _keyName) : keyName(_keyName) 
   {
+  }
+  
+  virtual std::string convert ()
+  {
+    return "[\"" + keyName + "\"]";
   }
 };
 #endif /*__AST_H__*/
