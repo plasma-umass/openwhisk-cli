@@ -1,9 +1,17 @@
 #include <string>
+#include <vector>
+
+#include "utils.h"
 
 #ifndef __WHISK_ACTION_H__
 #define __WHISK_ACTION_H__
 
-#define WHISK_FORK_NAME_LENGTH 10
+enum
+{
+  WHISK_FORK_NAME_LENGTH = 10,
+  WHISK_SEQ_NAME_LENGTH = 10,
+  WHISK_PROJ_NAME_LENGTH = 10
+};
 
 class WhiskAction
 {
@@ -16,25 +24,41 @@ public:
   }
   
   virtual ~WhiskAction () {}
+  
+  const char* getName () {return name.c_str ();}
+  
+  virtual void print () = 0;
 };
 
 class WhiskSequence : public WhiskAction
 {
 private:
-  vector<WhiskAction*> actions;
+  std::vector<WhiskAction*> actions;
 public:
-  WhiskSequence(std::string name) : WhiskSequence (name)
+  WhiskSequence(std::string name) : WhiskAction (name)
   {
   }
   
-  WhiskSequence(std::string name, vector<WhiskAction*> _actions) : WhiskAction(name), actions(_actions)
+  WhiskSequence(std::string name, std::vector<WhiskAction*> _actions) : WhiskAction(name), actions(_actions)
   {
   }
   
-  vector<WhiskAction*>& getActions () {return actions;}
+  std::vector<WhiskAction*>& getActions () {return actions;}
   void appendAction (WhiskAction* action) {actions.push_back (action);}
-  void insertAction (WhiskAction* action, int index) {actions.insert (index, action);}
-}
+  void insertAction (WhiskAction* action, int index) {actions.insert (actions.begin()+index, action);}
+  
+  virtual void print ()
+  {
+    fprintf (stdout, "(WhiskSequence %s, %ld, (", getName (), actions.size ());
+    
+    for (auto action : actions) {
+      action->print ();
+      fprintf (stdout, " -> ");
+    } 
+    
+    fprintf (stdout, "))\n");
+  }
+};
 
 class WhiskProjection : public WhiskAction
 {
@@ -47,6 +71,11 @@ public:
   }
   
   std::string getProjCode () {return projCode;}
+  
+  virtual void print ()
+  {
+    fprintf (stdout, "(WhiskProjection: '%s', %s)", getName (), projCode.c_str ());
+  }
 };
 
 class WhiskFork : public WhiskAction
@@ -60,12 +89,38 @@ public:
   {
   }
   
-  WhiskFork (std::string name, WhiskAction* innerAction) : WhiskAction(name), innerAction(_innerAction)
+  WhiskFork (std::string name, WhiskAction* _innerAction) : WhiskAction(name), innerAction(_innerAction)
   {
   }
   
   std::string getInnerActionName() {return innerActionName;}
   WhiskAction* getInnerAction() {return innerAction;}
+  
+  virtual void print ()
+  {
+    fprintf (stdout, "(WhiskFork '%s', '%s')", getName (), innerActionName.c_str ());
+  }
+};
+
+class WhiskProjForkPair : public WhiskAction
+{
+private:
+  WhiskFork* fork;
+  WhiskProjection* proj;
+
+public:
+  WhiskProjForkPair (WhiskProjection* _proj, WhiskFork* _fork):
+    WhiskAction ("ProjForkPair_" + gen_random_str (WHISK_FORK_NAME_LENGTH)),
+    fork(_fork), proj(_proj)
+  {
+  }
+  
+  virtual void print ()
+  {
+    proj->print ();
+    fprintf (stdout, " -> ");
+    fork->print ();
+  }
 };
 
 #endif

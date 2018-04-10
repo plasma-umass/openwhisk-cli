@@ -6,7 +6,7 @@
 class Converter
 {
 public:
-  static void convert(ASTNode* input);
+  static WhiskSequence* convert(Command* cmd);
 };
 
 #endif /*__DRIVER_H__*/

@@ -1,5 +1,10 @@
 #include "driver.h"
 
+#include <vector>
+#include <string>
+#include <iostream>
+#include <typeinfo>
+
 #define MAX_SEQ_NAME_SIZE 10
 
 std::string gen_random_str(const int len) {
@@ -16,11 +21,38 @@ std::string gen_random_str(const int len) {
     return str;
 }
 
-void Converter::convert (ASTNode* node)
+WhiskSequence* Converter::convert (Command* cmd)
 {
-  char sequence_name[MAX_SEQ_NAME_SIZE];
-  gen_random (&sequence_name, MAX_SEQ_NAME_SIZE);
-  WhiskSequence sequence ("SEQUENCE_" + sequence_name);
+  WhiskSequence* seq;
   
+  if (dynamic_cast <SimpleCommand*> (cmd) != nullptr) {
+    seq = new WhiskSequence ("SEQUENCE_" + gen_random_str(WHISK_SEQ_NAME_LENGTH), 
+                             std::vector<WhiskAction*> (1, dynamic_cast <SimpleCommand*> (cmd)->convert ()));
+  }
+  else if (dynamic_cast <ComplexCommand*> (cmd) != nullptr) {
+    WhiskAction* act;
+    
+    act = dynamic_cast <ComplexCommand*> (cmd)->convert ();
+    seq = dynamic_cast <WhiskSequence*> (act);
+  }
+  else {
+    fprintf (stderr, "No conversion for %s specified", typeid (cmd).name ());
+  }
   
+  return seq;
+}
+
+int main ()
+{
+  JSONIdentifier X1("X1"), X2("X2");
+  Input input;
+  CallAction CallA1(&X1, "A1", &input);
+  CallAction CallA2(&X2, "A2", &X1);
+  std::vector<SimpleCommand*> v;
+  v.push_back(&CallA1);
+  v.push_back(&CallA2);
+  ComplexCommand allCmds(v);
+  WhiskSequence* seq = Converter::convert (&allCmds);
+  
+  seq->print ();
 }

@@ -1,7 +1,9 @@
 #include <string>
 #include <iostream>
+#include <vector>
 
 #include "whisk_action.h"
+#include "utils.h"
 
 #ifndef __AST_H__
 #define __AST_H__
@@ -62,6 +64,8 @@
 
 typedef std::string ActionName;
 
+class CallAction;
+
 class ASTVisitor 
 {
 };
@@ -75,7 +79,7 @@ protected:
 class JSONExpression : public ASTNode
 {
 public:
-  virtual std::string JSONExpression () = 0;
+  virtual std::string convert () = 0;
 };
 
 class JSONIdentifier : public JSONExpression
@@ -85,21 +89,25 @@ private:
   CallAction* callStmt;
   
 public:
-  JSONIdentifier (std::string id, CallAction* _callStmt = nullptr) : 
-    identifier(id), callStmt(_callStmt)
+  JSONIdentifier (std::string id, CallAction* _callStmt) : 
+    identifier(id)
   {
+    callStmt = _callStmt;
   }
   
-  void setCallStmt(CallAction* _callStmt) {callStmt = _callStmt;}
-  
-  virtual WhiskAction* convert ()
+  JSONIdentifier (std::string id) : identifier(id)
   {
-    return ".saved.output_"+callStmt->getForkName ();
+    callStmt = NULL;
   }
+  
+  void setCallStmt(CallAction* _callStmt);
+  virtual std::string convert ();
 };
 
 class Command : public ASTNode
 {
+public:
+  virtual ~Command () {}
 };
 
 class SimpleCommand : public Command
@@ -111,24 +119,24 @@ public:
 class ComplexCommand : public Command
 {
 private:
-  vector<SimpleCommand*> cmds;
+  std::vector<SimpleCommand*> cmds;
   
 public:
-  ComplexCommand(vector<SimpleCommand*> _cmds): cmds(_cmds)
+  ComplexCommand(std::vector<SimpleCommand*> _cmds): cmds(_cmds)
   {
   }
   
-  const vector<SimpleCommand*>& getSimpleCommands() {return cmds;}
+  const std::vector<SimpleCommand*>& getSimpleCommands() {return cmds;}
   
   virtual WhiskAction* convert ()
   {
-    vector<WhiskAction*> actions;
+    std::vector<WhiskAction*> actions;
     
     for (auto cmd : cmds) {
-      actions.push_back (convert (cmd));
+      actions.push_back (cmd->convert ());
     }
     
-    return new WhiskSequence ("SEQUENCE" + get_random_str (WHISK_SEQ_NAME_LENGTH), 
+    return new WhiskSequence ("Sequence_" + gen_random_str (WHISK_SEQ_NAME_LENGTH), 
                               actions);
   }
 };
@@ -139,16 +147,17 @@ private:
   JSONExpression* exp;
   
 public:
-  Return (JSONExpression* _exp): exp(_exp) 
+  Return (JSONExpression* _exp) 
   {
+    exp = _exp;
   }
   
-  const JSONExpression* getReturnExpr() {return exp;}
+  JSONExpression* getReturnExpr() {return exp;}
   
   virtual WhiskAction* convert ()
   {
-    return WhiskProjection ("Proj_" + get_random_str (WHISK_PROJ_NAME_LENGTH), 
-                            convert(getReturnExpr ()));
+    return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
+                                getReturnExpr ()->convert ());
   }
 };
 
@@ -163,23 +172,30 @@ private:
   
 public:
   CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONIdentifier* _arg) : 
-    retVal(retVal), actionName (_actionName), arg(_arg) 
+    retVal(_retVal), actionName (_actionName), arg(_arg) 
   {
     retVal->setCallStmt(this);
     callID++;
+    forkName = "";
   }
   
   const JSONIdentifier* getReturnValue() {return retVal;}
   const ActionName& getActionName() {return actionName;}
   const JSONIdentifier* getArgument() {return arg;}
-  std::string getForkName() {return forkName;}
+  std::string getForkName() 
+  {
+    if (forkName == "") {
+      forkName = "Fork_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+    }
+    
+    return forkName;
+  }
   
   virtual WhiskAction* convert ()
   {
-    forkName = "Fork_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-    
-    return new WhiskFork ("Fork_" + gen_random_str(WHISK_FORK_NAME_LENGTH), 
-                          getActionName ());
+    return new WhiskProjForkPair (new WhiskProjection ("Proj_"+ gen_random_str(WHISK_PROJ_NAME_LENGTH),
+                                                       arg->convert ()),
+                                  new WhiskFork (getForkName (), getActionName ()));
   }
 };
 
@@ -198,7 +214,7 @@ public:
   
   const JSONIdentifier* getOutput() {return out;}
   const JSONIdentifier* getInput() {return in;}
-  const JSONIdentifier* getTransformation() {return transformation;}
+  const JSONExpression* getTransformation() {return transformation;}
   
   virtual WhiskAction* convert ()
   {
@@ -208,7 +224,7 @@ public:
     
     return new WhiskProjection ("Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH), code);
   }
-}
+};
 
 //~ class LetCommand : public SimpleCommand
 //~ {
@@ -284,10 +300,10 @@ public:
 class JSONArrayExpression : public JSONExpression
 {
 private:
-  vector<JSONExpression*> exprs;
+  std::vector<JSONExpression*> exprs;
   
 public:
-  JSONArrayExpression (vector<JSONExpression*> _exprs): exprs(_exprs) 
+  JSONArrayExpression (std::vector<JSONExpression*> _exprs): exprs(_exprs) 
   {
   }
   
@@ -298,7 +314,7 @@ public:
     to_ret = "[";
     
     for (auto expr : exprs) {
-      to_ret += convert (expr);
+      to_ret += expr->convert ();
     }
     
     to_ret = "]";
@@ -309,21 +325,24 @@ class KeyValuePair : public ASTNode
 {
 private:
   std::string key;
-  JSONExpression value;
+  JSONExpression* value;
   
 public:
   KeyValuePair (std::string _key, JSONExpression* _value) : key(_key), value(_value)
   {
   }
+  
+  std::string getKey () {return key;}
+  JSONExpression* getValue () {return value;}
 };
 
 class JSONObjectExpression : public JSONExpression
 {
 private:
-  vector<KeyValuePair*> kvpairs;
+  std::vector<KeyValuePair*> kvpairs;
   
 public:
-  JSONObjectExpression (vector<KeyValuePair*> _kvpairs) : kvpairs(_kvpairs) 
+  JSONObjectExpression (std::vector<KeyValuePair*> _kvpairs) : kvpairs(_kvpairs) 
   {
   }
   
@@ -334,7 +353,7 @@ public:
     to_ret = "{";
     
     for (auto kvpair : kvpairs) {
-      to_ret = "\"" + kvpair->getKey () + "\":" + convert (kvpair->getValue ()); 
+      to_ret = "\"" + kvpair->getKey () + "\":" + kvpair->getValue ()->convert (); 
     }
     
     to_ret = "}";
@@ -347,6 +366,10 @@ class Input : public JSONIdentifier
 {
 public:
   Input () : JSONIdentifier ("input") {}
+  std::string convert ()
+  {    
+    return ".saved.input";
+  }
 };
 
 class Pattern : public ASTNode
@@ -358,8 +381,8 @@ public:
 class PatternApplication : public JSONExpression
 {
 private:
-  JSONExpression* _expr;
-  Pattern* _pat;
+  JSONExpression* expr;
+  Pattern* pat;
   
 public:
   PatternApplication (JSONExpression* _expr, Pattern* _pat): expr(_expr), pat(_pat)
@@ -372,7 +395,7 @@ public:
   
   virtual std::string convert () 
   {
-    return convert (getExpression ()) + convert (getPattern ());
+    return getExpression ()->convert () + getPattern ()->convert ();
   }
 };
 
