@@ -1,0 +1,15 @@
+To Generate JS Binding:
+1. swig -c++ -javascript -node ilswig.i
+2. node-gyp rebuild
+
+To Use JS Example
+1. node js_ex.js
+
+
+To Generate Python Binding
+1. swig -python -c++ ilswig.i
+2. g++ -c ilswig_wrap.cxx -I/usr/include/python3.5m/ -std=c++11 -fPIC
+3. g++ -shared ilswig_wrap.o  -o _ilswig.so
+
+Run Python 3 example by: 
+python3 python_ex.py
