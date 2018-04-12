@@ -1,3 +1,12 @@
+Get swig-3.0.12:
+1. from http://www.swig.org/download.html
+2. cd swig-3.0.12
+3. git apply v8-patch.patch
+4. ./autogen.sh
+5. ./configure
+6. make
+7. sudo make install 
+
 To Generate JS Binding:
 1. swig -c++ -javascript -node ilswig.i
 2. node-gyp rebuild
