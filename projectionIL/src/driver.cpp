@@ -25,18 +25,18 @@ WhiskSequence* Converter::convert (Command* cmd)
 {
   WhiskSequence* seq;
   
-  if (dynamic_cast <SimpleCommand*> (cmd) != nullptr) {
+  if (cmd->getType () == Command::SimpleCommandType) {
     seq = new WhiskSequence ("SEQUENCE_" + gen_random_str(WHISK_SEQ_NAME_LENGTH), 
-                             std::vector<WhiskAction*> (1, dynamic_cast <SimpleCommand*> (cmd)->convert ()));
+                             std::vector<WhiskAction*> (1, ((SimpleCommand*)cmd)->convert ()));
   }
-  else if (dynamic_cast <ComplexCommand*> (cmd) != nullptr) {
+  else if (cmd->getType () == Command::ComplexCommandType) {
     WhiskAction* act;
     
-    act = dynamic_cast <ComplexCommand*> (cmd)->convert ();
-    seq = dynamic_cast <WhiskSequence*> (act);
+    act = ((ComplexCommand*)cmd)->convert ();
+    seq = (WhiskSequence*)act;
   }
   else {
-    fprintf (stderr, "No conversion for %s specified", typeid (cmd).name ());
+    fprintf (stderr, "No conversion for %d specified", cmd->getType ());
   }
   
   return seq;

@@ -15,4 +15,6 @@
 %include "utils.h"
 %include "whisk_action.h"
 
-%template(VectorSimpleCommand) std::vector<SimpleCommand*>;
+namespace std {
+%template(VectorSimpleCommand) vector<SimpleCommand*>;
+}

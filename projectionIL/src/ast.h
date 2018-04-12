@@ -107,12 +107,24 @@ public:
 class Command : public ASTNode
 {
 public:
+  enum CommandType
+  {
+    SimpleCommandType,
+    ComplexCommandType,
+    ReturnCommandType
+  } type;
+protected:
+  Command(CommandType _type) : type(_type) {}
+  
+public:
+  CommandType getType() {return type;}
   virtual ~Command () {}
 };
 
 class SimpleCommand : public Command
 {
 public:
+  SimpleCommand (): Command(SimpleCommandType) {}
   virtual WhiskAction* convert () = 0;
 };
 
@@ -122,7 +134,8 @@ private:
   std::vector<SimpleCommand*> cmds;
   
 public:
-  ComplexCommand(std::vector<SimpleCommand*> _cmds): cmds(_cmds)
+  ComplexCommand(std::vector<SimpleCommand*> _cmds): Command (ComplexCommandType), 
+                                                    cmds(_cmds)
   {
   }
   
@@ -147,7 +160,7 @@ private:
   JSONExpression* exp;
   
 public:
-  Return (JSONExpression* _exp) 
+  Return (JSONExpression* _exp) : Command (ReturnCommandType)
   {
     exp = _exp;
   }
@@ -172,7 +185,7 @@ private:
   
 public:
   CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONIdentifier* _arg) : 
-    retVal(_retVal), actionName (_actionName), arg(_arg) 
+    SimpleCommand(), retVal(_retVal), actionName (_actionName), arg(_arg) 
   {
     retVal->setCallStmt(this);
     callID++;
@@ -208,7 +221,7 @@ private:
   
 public:
   JSONTransformation (JSONIdentifier* _out, JSONIdentifier* _in, JSONExpression* _trans) : 
-    out(_out), in(_in), transformation(_trans) 
+    SimpleCommand(), out(_out), in(_in), transformation(_trans) 
   {
   }
   
