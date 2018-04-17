@@ -53,6 +53,6 @@ int main ()
   v.push_back(&CallA2);
   ComplexCommand allCmds(v);
   WhiskSequence* seq = Converter::convert (&allCmds);
-  
-  seq->print ();
+  seq->generateCommand (std::cout);
+  //seq->print ();
 }

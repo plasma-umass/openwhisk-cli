@@ -6,6 +6,8 @@
 #ifndef __WHISK_ACTION_H__
 #define __WHISK_ACTION_H__
 
+#define WHISK_CLI_PATH "./wsk"
+#define WHISK_CLI_ARGS "-i"
 enum
 {
   WHISK_FORK_NAME_LENGTH = 10,
@@ -28,6 +30,7 @@ public:
   const char* getName () {return name.c_str ();}
   
   virtual void print () = 0;
+  virtual void generateCommand(std::ostream& os) = 0;
 };
 
 class WhiskSequence : public WhiskAction
@@ -58,13 +61,20 @@ public:
     
     fprintf (stdout, "))\n");
   }
+  
+  virtual void generateCommand(std::ostream& os)
+  {
+    for (auto action : actions) {
+      action->generateCommand (os);
+    }
+  }
 };
 
 class WhiskProjection : public WhiskAction
 {
 private:
   std::string projCode;
-
+  
 public:
   WhiskProjection (std::string name, std::string _code) : WhiskAction (name), projCode (_code)
   {
@@ -75,6 +85,18 @@ public:
   virtual void print ()
   {
     fprintf (stdout, "(WhiskProjection: '%s', %s)", getName (), projCode.c_str ());
+  }
+  
+  virtual void generateCommand(std::ostream& os)
+  {
+    char temp[] = "wsk-proj-XXXXXX";
+    if (mkstemp(&temp[0]) == -1) {
+      fprintf (stderr, "Cannot create temporary file '%s'", temp);
+      abort ();
+    }
+    
+    os << "echo " << getProjCode () << " > " << "/tmp/" << temp << "\n";
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " << getName () << " --proj " << " /tmp/" << temp << "\n";
   }
 };
 
@@ -91,14 +113,22 @@ public:
   
   WhiskFork (std::string name, WhiskAction* _innerAction) : WhiskAction(name), innerAction(_innerAction)
   {
+    innerActionName = innerAction->getName ();
   }
   
-  std::string getInnerActionName() {return innerActionName;}
+  std::string getInnerActionName() {      
+    return innerActionName;
+  }
   WhiskAction* getInnerAction() {return innerAction;}
   
   virtual void print ()
   {
     fprintf (stdout, "(WhiskFork '%s', '%s')", getName (), innerActionName.c_str ());
+  }
+  
+  virtual void generateCommand(std::ostream& os)
+  {
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " << getName() << " --fork " << getInnerActionName() << std::endl;
   }
 };
 
@@ -120,6 +150,12 @@ public:
     proj->print ();
     fprintf (stdout, " -> ");
     fork->print ();
+  }
+  
+  virtual void generateCommand(std::ostream& os)
+  {
+    proj->generateCommand(os);
+    fork->generateCommand(os);
   }
 };
 
