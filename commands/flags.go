@@ -136,6 +136,7 @@ type ActionFlags struct {
 	sequence bool
         projection bool
         fork bool
+        app bool
 	timeout  int
 	memory   int
 	logsize  int

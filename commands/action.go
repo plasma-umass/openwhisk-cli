@@ -58,6 +58,7 @@ const (
 	SEQUENCE          = "sequence"
         PROJECTION        = "projection"
         FORK              = "fork"
+        APP               = "app"
 	FETCH_CODE        = true
 	DO_NOT_FETCH_CODE = false
 )
@@ -458,6 +459,13 @@ func parseAction(cmd *cobra.Command, args []string, update bool) (*whisk.Action,
                                 fmt.Println ("Number of Components for Projection cannot be more than one")
                                 return nil, noArtifactError ()
                         }
+                } else {
+                        return nil, noArtifactError ()
+                }
+        } else if Flags.action.app {
+                if len(args) == 2 {
+                        action.Exec = new(whisk.Exec)
+                        action.Exec.Kind = APP
                 } else {
                         return nil, noArtifactError ()
                 }
@@ -1079,6 +1087,7 @@ func init() {
 	actionCreateCmd.Flags().BoolVar(&Flags.action.sequence, "sequence", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
         actionCreateCmd.Flags().BoolVar(&Flags.action.projection, "projection", false, wski18n.T("treat ACTION as a projection with action name and schema code "))
         actionCreateCmd.Flags().BoolVar(&Flags.action.fork, "fork", false, wski18n.T("treat ACTION as a fork with action name "))
+        actionCreateCmd.Flags().BoolVar(&Flags.action.app, "app", false, wski18n.T("treat ACTION as a app with action name "))
 	actionCreateCmd.Flags().StringVar(&Flags.action.kind, "kind", "", wski18n.T("the `KIND` of the action runtime (example: swift:default, nodejs:default)"))
 	actionCreateCmd.Flags().StringVar(&Flags.action.main, "main", "", wski18n.T("the name of the action entry point (function or fully-qualified method name when applicable)"))
 	actionCreateCmd.Flags().IntVarP(&Flags.action.timeout, TIMEOUT_FLAG, "t", TIMEOUT_LIMIT, wski18n.T("the timeout `LIMIT` in milliseconds after which the action is terminated"))
@@ -1096,6 +1105,7 @@ func init() {
 	actionUpdateCmd.Flags().BoolVar(&Flags.action.sequence, "sequence", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
         actionUpdateCmd.Flags().BoolVar(&Flags.action.projection, "projection", false, wski18n.T("treat ACTION as a projection with action name and schema code "))
         actionUpdateCmd.Flags().BoolVar(&Flags.action.fork, "fork", false, wski18n.T("treat ACTION as a fork with action name and schema code "))
+        actionUpdateCmd.Flags().BoolVar(&Flags.action.app, "app", false, wski18n.T("treat ACTION as a app with action name and schema code "))
 	actionUpdateCmd.Flags().StringVar(&Flags.action.kind, "kind", "", wski18n.T("the `KIND` of the action runtime (example: swift:default, nodejs:default)"))
 	actionUpdateCmd.Flags().StringVar(&Flags.action.main, "main", "", wski18n.T("the name of the action entry point (function or fully-qualified method name when applicable)"))
 	actionUpdateCmd.Flags().IntVarP(&Flags.action.timeout, TIMEOUT_FLAG, "t", TIMEOUT_LIMIT, wski18n.T("the timeout `LIMIT` in milliseconds after which the action is terminated"))
