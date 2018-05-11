@@ -31,6 +31,7 @@ public:
   
   virtual void print () = 0;
   virtual void generateCommand(std::ostream& os) = 0;
+  virtual std::string getNameForSeq () {return getName ();}
 };
 
 class WhiskSequence : public WhiskAction
@@ -67,6 +68,13 @@ public:
     for (auto action : actions) {
       action->generateCommand (os);
     }
+    
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " << getName () << " --sequence ";
+    for (int i = 0; i < actions.size (); i++) {
+      os << actions[i]->getNameForSeq () << ", ";
+    }
+    
+    os << actions[actions.size () - 1]->getNameForSeq () << std::endl;
   }
 };
 
@@ -116,9 +124,11 @@ public:
     innerActionName = innerAction->getName ();
   }
   
-  std::string getInnerActionName() {      
+  std::string getInnerActionName()
+  {
     return innerActionName;
   }
+  
   WhiskAction* getInnerAction() {return innerAction;}
   
   virtual void print ()
@@ -128,7 +138,8 @@ public:
   
   virtual void generateCommand(std::ostream& os)
   {
-    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " << getName() << " --fork " << getInnerActionName() << std::endl;
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " <<
+      getName() << " --fork " << getInnerActionName() << std::endl;
   }
 };
 
@@ -156,6 +167,26 @@ public:
   {
     proj->generateCommand(os);
     fork->generateCommand(os);
+  }
+  
+  virtual std::string getNameForSeq () {return proj->getName () + std::string(", ") + fork->getName ();}
+};
+
+class WhiskApp : public WhiskAction
+{
+private:
+public:
+  WhiskApp () : WhiskAction("App")
+  {}
+  
+  virtual void print ()
+  {
+    fprintf (stdout, "App");
+  }
+  
+  virtual void generateCommand (std::ostream& os)
+  {
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action invoke " << getName () << std::endl;
   }
 };
 

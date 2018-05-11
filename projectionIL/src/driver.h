@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "whisk_action.h"
 
 #ifndef __DRIVER_H__
 #define __DRIVER_H__

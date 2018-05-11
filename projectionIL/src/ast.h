@@ -1,6 +1,9 @@
 #include <string>
 #include <iostream>
 #include <vector>
+#include <unordered_set>
+#include <map>
+#include <utility>
 
 #include "whisk_action.h"
 #include "utils.h"
@@ -86,21 +89,21 @@ class JSONIdentifier : public JSONExpression
 {
 private:
   std::string identifier;
-  CallAction* callStmt;
+  std::map   <uint32_t, CallAction*> callStmtsToInt;
+  std::unordered_set <CallAction*> callStmts;
   
 public:
   JSONIdentifier (std::string id, CallAction* _callStmt) : 
     identifier(id)
   {
-    callStmt = _callStmt;
+    addCallStmt (_callStmt);
   }
   
   JSONIdentifier (std::string id) : identifier(id)
   {
-    callStmt = NULL;
   }
   
-  void setCallStmt(CallAction* _callStmt);
+  void addCallStmt(CallAction* _callStmt);
   virtual std::string convert ();
 };
 
@@ -115,7 +118,7 @@ public:
   } type;
 protected:
   Command(CommandType _type) : type(_type) {}
-  
+  Command(Command& c) : type(c.type) {}
 public:
   CommandType getType() {return type;}
   virtual ~Command () {}
@@ -137,6 +140,15 @@ public:
   ComplexCommand(std::vector<SimpleCommand*> _cmds): Command (ComplexCommandType), 
                                                     cmds(_cmds)
   {
+  }
+  
+  ComplexCommand(): Command (ComplexCommandType)
+  {
+  }
+  
+  void appendSimpleCommand (SimpleCommand* c)
+  {
+    cmds.push_back(c);
   }
   
   const std::vector<SimpleCommand*>& getSimpleCommands() {return cmds;}
@@ -179,7 +191,7 @@ class CallAction : public SimpleCommand
 private:
   JSONIdentifier* retVal;
   ActionName actionName;
-  JSONIdentifier* arg;
+  JSONExpression* arg;
   static int callID;
   std::string forkName;
   
@@ -187,14 +199,14 @@ public:
   CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONIdentifier* _arg) : 
     SimpleCommand(), retVal(_retVal), actionName (_actionName), arg(_arg) 
   {
-    retVal->setCallStmt(this);
+    retVal->addCallStmt(this);
     callID++;
     forkName = "";
   }
   
   const JSONIdentifier* getReturnValue() {return retVal;}
   const ActionName& getActionName() {return actionName;}
-  const JSONIdentifier* getArgument() {return arg;}
+  const JSONExpression* getArgument() {return arg;}
   std::string getForkName() 
   {
     if (forkName == "") {
@@ -246,12 +258,107 @@ public:
   //~ }
 //~ };
 
-//~ class IfThenElseCommand : public SimpleCommand
-//~ {
-//~ public:
-  //~ IfThenElseCommand (Expression* expr, Command* then, Command* else) {
-  //~ }
-//~ };
+class IfThenElseCommand : public SimpleCommand
+{
+private:
+  JSONExpression* expr;
+  ComplexCommand* thenBranch;
+  ComplexCommand* elseBranch;
+  
+public:
+  IfThenElseCommand (JSONExpression* _expr, ComplexCommand* _thenBranch, 
+                     ComplexCommand* _elseBranch)
+  {
+    expr = _expr;
+    thenBranch = _thenBranch;
+    elseBranch = _elseBranch;
+  }
+  
+  IfThenElseCommand (JSONExpression* _expr, SimpleCommand* _thenBranch, 
+                     SimpleCommand* _elseBranch)
+  {
+    expr = _expr;
+    thenBranch = new ComplexCommand ();
+    thenBranch->appendSimpleCommand (_thenBranch);
+    elseBranch = new ComplexCommand ();
+    elseBranch->appendSimpleCommand (_elseBranch);
+  }
+  
+  Command* getThenBranch () 
+  {
+    return thenBranch;
+  }
+  
+  Command* getElseBranch ()
+  {
+    return elseBranch;
+  }
+  
+  JSONExpression* getCondition ()
+  {
+    return expr;
+  }
+  
+  virtual WhiskAction* convert ()
+  {
+    WhiskAction* proj;
+    WhiskSequence* thenSeq;
+    WhiskSequence* elseSeq;
+    WhiskSequence* toReturn;
+    std::string code;
+    
+    code = expr->convert ();
+    thenSeq = dynamic_cast <WhiskSequence*> (thenBranch->convert());
+    elseSeq = dynamic_cast <WhiskSequence*> (elseBranch->convert());
+    code = "if ("+code+") then . * {\"action\": " + thenSeq->getName () + 
+      "} else . * {\"action\":" + elseSeq->getName () + "}";
+    proj = new WhiskProjection ("Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH),
+                                code);
+    toReturn = new WhiskSequence ("Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH));
+    toReturn->appendAction (proj);
+    toReturn->appendAction (thenSeq);
+    toReturn->appendAction (elseSeq);
+    
+    return toReturn;
+  }
+};
+
+class PHINode : public SimpleCommand 
+{
+private:
+  std::vector<std::pair<Command*, JSONIdentifier*> > commandExprVector;
+  
+public:
+  PHINode (std::vector<std::pair<Command*, JSONIdentifier*> > _commandExprVector) :
+    commandExprVector (_commandExprVector)
+  {
+  }
+  
+  const std::vector<std::pair<Command*, JSONIdentifier*> >& getCommandExprVector ()
+  {
+    return commandExprVector;
+  }
+  
+  virtual WhiskAction* convert () 
+  {
+    std::string _finalString;
+    int i;
+    
+    for (i = 0; i < commandExprVector.size () - 1; i++) {
+      _finalString += "if ("+ commandExprVector[i].second->convert() +
+        " != null) then " + commandExprVector[i].second->convert();
+      _finalString += " else ( ";
+    }
+    
+    _finalString += commandExprVector[i].second->convert();
+    
+    for (i = 0; i < commandExprVector.size (); i++) {
+      _finalString += ")";
+    }
+    
+    return new WhiskProjection ("Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH), _finalString);
+  }
+};
 
 class ConstantExpression : public JSONExpression
 {
@@ -263,7 +370,7 @@ private:
   float number;
   
 public:
-  NumberExpression (float _number) :number(_number)
+  NumberExpression (float _number) : number(_number)
   {
   }
   
