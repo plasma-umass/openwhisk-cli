@@ -5,6 +5,7 @@
 #include <map>
 #include <utility>
 
+#include <assert.h>
 #include "whisk_action.h"
 #include "utils.h"
 
@@ -65,6 +66,9 @@
  * return X3
 */
 
+//TODO: JSONExpression in CallAction, While Condition are JSONIdentifier.
+//Make them more general so they can take any expression as input.
+
 typedef std::string ActionName;
 
 class CallAction;
@@ -122,6 +126,7 @@ protected:
 public:
   CommandType getType() {return type;}
   virtual ~Command () {}
+  virtual std::string getActionName () = 0;
 };
 
 class SimpleCommand : public Command
@@ -135,11 +140,13 @@ class ComplexCommand : public Command
 {
 private:
   std::vector<SimpleCommand*> cmds;
+  std::string actionName;
   
 public:
   ComplexCommand(std::vector<SimpleCommand*> _cmds): Command (ComplexCommandType), 
                                                     cmds(_cmds)
   {
+    actionName = "Sequence_" + gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
   ComplexCommand(): Command (ComplexCommandType)
@@ -161,8 +168,12 @@ public:
       actions.push_back (cmd->convert ());
     }
     
-    return new WhiskSequence ("Sequence_" + gen_random_str (WHISK_SEQ_NAME_LENGTH), 
-                              actions);
+    return new WhiskSequence (getActionName (), actions);
+  }
+  
+  virtual std::string getActionName ()
+  {
+    return actionName;
   }
 };
 
@@ -188,39 +199,41 @@ public:
 
 class CallAction : public SimpleCommand
 {
-private:
+protected:
   JSONIdentifier* retVal;
   ActionName actionName;
   JSONExpression* arg;
   static int callID;
   std::string forkName;
+  std::string projName;
   
 public:
-  CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONIdentifier* _arg) : 
+  CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONExpression* _arg) : 
     SimpleCommand(), retVal(_retVal), actionName (_actionName), arg(_arg) 
   {
     retVal->addCallStmt(this);
     callID++;
-    forkName = "";
+    forkName = "Fork_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+    projName = actionName;
   }
   
   const JSONIdentifier* getReturnValue() {return retVal;}
-  const ActionName& getActionName() {return actionName;}
+  virtual std::string getActionName() {return actionName;}
   const JSONExpression* getArgument() {return arg;}
-  std::string getForkName() 
+  virtual std::string getForkName() 
   {
-    if (forkName == "") {
-      forkName = "Fork_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-    }
-    
     return forkName;
   }
   
   virtual WhiskAction* convert ()
   {
-    return new WhiskProjForkPair (new WhiskProjection ("Proj_"+ gen_random_str(WHISK_PROJ_NAME_LENGTH),
-                                                       arg->convert ()),
+    return new WhiskProjForkPair (new WhiskProjection (projName, arg->convert ()),
                                   new WhiskFork (getForkName (), getActionName ()));
+  }
+  
+  std::string getProjName ()
+  {
+    return projName;
   }
 };
 
@@ -230,11 +243,13 @@ private:
   JSONIdentifier* out;
   JSONIdentifier* in;
   JSONExpression* transformation;
+  std::string name;
   
 public:
   JSONTransformation (JSONIdentifier* _out, JSONIdentifier* _in, JSONExpression* _trans) : 
     SimpleCommand(), out(_out), in(_in), transformation(_trans) 
   {
+    name = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
   
   const JSONIdentifier* getOutput() {return out;}
@@ -247,16 +262,30 @@ public:
     
     code = transformation->convert ();
     
-    return new WhiskProjection ("Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH), code);
+    return new WhiskProjection (name, code);
+  }
+  
+  virtual std::string getActionName ()
+  {
+    return name;
   }
 };
 
-//~ class LetCommand : public SimpleCommand
-//~ {
-//~ public:
-  //~ LetCommand (JSONVariable* var, Expression* expr) {
-  //~ }
-//~ };
+class LetCommand : public SimpleCommand
+{
+private:
+  JSONExpression* expr;
+  JSONIdentifier* id;
+
+public:
+  LetCommand (JSONIdentifier* _id, JSONExpression* _expr) : id(_id), expr(_expr) 
+  {}
+  
+  virtual WhiskAction* convert ()
+  {
+    
+  }
+};
 
 class IfThenElseCommand : public SimpleCommand
 {
@@ -264,6 +293,7 @@ private:
   JSONExpression* expr;
   ComplexCommand* thenBranch;
   ComplexCommand* elseBranch;
+  std::string seqName;
   
 public:
   IfThenElseCommand (JSONExpression* _expr, ComplexCommand* _thenBranch, 
@@ -272,6 +302,7 @@ public:
     expr = _expr;
     thenBranch = _thenBranch;
     elseBranch = _elseBranch;
+    seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
   IfThenElseCommand (JSONExpression* _expr, SimpleCommand* _thenBranch, 
@@ -314,24 +345,28 @@ public:
       "} else . * {\"action\":" + elseSeq->getName () + "}";
     proj = new WhiskProjection ("Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH),
                                 code);
-    toReturn = new WhiskSequence ("Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH));
+    toReturn = new WhiskSequence (seqName);
     toReturn->appendAction (proj);
     toReturn->appendAction (thenSeq);
     toReturn->appendAction (elseSeq);
     
     return toReturn;
   }
+  
+  virtual std::string getActionName () {return seqName;}
 };
 
 class PHINode : public SimpleCommand 
 {
 private:
   std::vector<std::pair<Command*, JSONIdentifier*> > commandExprVector;
+  std::string projName;
   
 public:
   PHINode (std::vector<std::pair<Command*, JSONIdentifier*> > _commandExprVector) :
     commandExprVector (_commandExprVector)
   {
+    projName = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
   
   const std::vector<std::pair<Command*, JSONIdentifier*> >& getCommandExprVector ()
@@ -356,7 +391,146 @@ public:
       _finalString += ")";
     }
     
-    return new WhiskProjection ("Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH), _finalString);
+    return new WhiskProjection (projName, _finalString);
+  }
+  
+  virtual std::string getActionName ()
+  {
+    return projName;
+  }
+};
+
+class Pointer : public JSONExpression
+{
+private:
+  std::string name;
+
+public:
+  Pointer (std::string _name) : name(_name) {}
+  
+  std::string getName () {return name;}
+  
+  virtual std::string convert () 
+  {
+    return ".saved."+name;
+  }
+};
+
+class LoadPointer : public CallAction
+{
+private:
+  Pointer* ptr;
+
+public:
+  LoadPointer (JSONIdentifier* _retVal, Pointer* _ptr) : CallAction (_retVal, "Load_ptr", _ptr)
+  {}
+  
+  virtual WhiskAction* convert ()
+  {
+     return new WhiskProjection (projName,
+                                 ". * {\"saved\":{\""+retVal->convert () + "\":"+ptr->convert () + "}}");
+  }
+  
+  virtual std::string getForkName() 
+  {
+    fprintf(stderr, "LoadPointer::getForkName() should not be called\n");
+    abort ();
+  }
+};
+
+class StorePointer : public SimpleCommand
+{
+private:
+  JSONExpression* expr;
+  Pointer* ptr;
+  std::string projName;
+  
+public:
+  StorePointer (JSONExpression* _expr, Pointer* _ptr) : expr(_expr), ptr(_ptr) 
+  {
+    projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
+  }
+  
+  virtual WhiskAction* convert ()
+  {
+    std::string code;
+    
+    code = ". * { \"saved\" : {\" " + ptr->getName () + "\":" + expr->convert () + "}";
+    
+    return new WhiskProjection (projName, code);
+  }
+};
+
+class DirectBranch : public SimpleCommand 
+{
+private:
+  Command* target;
+
+public:
+  DirectBranch (Command* _target) : target(_target)
+  {}
+  
+  virtual WhiskAction* convert ()
+  {
+    return new WhiskDirectBranch (target->getActionName ());
+  }
+  
+  virtual std::string getActionName ()
+  {
+    fprintf (stderr, "DirectBranch::getActionName should not be called\n");
+    abort ();
+  }
+};
+
+class WhileLoop : public SimpleCommand
+{
+private:
+  ComplexCommand* cmds;
+  JSONExpression* cond;
+  
+public:
+  WhileLoop (JSONExpression* _cond, ComplexCommand* _cmds) : cond(_cond), cmds(_cmds)
+  {}
+  
+  WhileLoop (JSONExpression* _cond, SimpleCommand* _cmd) : cond(_cond)
+  {
+    cmds = new ComplexCommand ();
+    cmds->appendSimpleCommand (_cmd);
+  }
+  
+  virtual WhiskAction* convert ()
+  {
+    //While Loop is a sequence of four actions:
+    //1. Projection action. Which sees if the condition is valid and then
+    //    calls other action based on it.
+    //2. Sequence of actions produced by the ComplexCommand inside the while loop.
+    //3. A DirectBranch action to 1.
+    //4. A dummy projection action to break out of the loop.
+    
+    WhiskSequence* seq;
+    WhiskSequence* cmdSeq;
+    WhiskProjection* condProj;
+    WhiskProjection* dummyAction;
+    
+    std::string ifcode;
+    std::string thenCode;
+    std::string elseCode;
+    
+    dummyAction = new WhiskProjection ("Proj_LoopEnd_"+gen_random_str(WHISK_PROJ_NAME_LENGTH), ".");
+    cmdSeq = dynamic_cast <WhiskSequence*> (cmds->convert ());
+    assert (cmdSeq != nullptr);
+    seq = new WhiskSequence ("WhileLoop_Seq_" + gen_random_str(WHISK_SEQ_NAME_LENGTH));
+    ifcode = "if (" + cond->convert () + " == true) ";
+    thenCode = ". * {\"action\": " + std::string(cmdSeq->getName ()) + "}"; //TODO: Add input
+    elseCode = ". * {\"action\": " + std::string(dummyAction->getName ()) + "}";
+    condProj = new WhiskProjection ("Proj_WhileLoopCond_"+gen_random_str(WHISK_PROJ_NAME_LENGTH),
+                                    ifcode + " then (" + thenCode + ") else (" + elseCode + ")");
+    
+    seq->appendAction (condProj);
+    seq->appendAction (cmdSeq);
+    seq->appendAction (dummyAction);
+    
+    return seq;    
   }
 };
 

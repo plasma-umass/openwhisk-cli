@@ -190,4 +190,26 @@ public:
   }
 };
 
+class WhiskDirectBranch : public WhiskApp
+{
+private:
+  std::string target;
+
+public:
+  WhiskDirectBranch (std::string _target) : target(_target)
+  {}
+  
+  virtual void print ()
+  {
+    fprintf (stdout, "App (%s)", target.c_str ());
+  }
+  
+  virtual void generateCommand (std::ostream& os)
+  {
+    WhiskProjection p ("Proj_DirectBranch_" +gen_random_str (WHISK_PROJ_NAME_LENGTH), 
+                       ". * {\"action\":" + target+"}"); //TODO: Wrap correctly in app.
+    p.generateCommand (os);
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action invoke " << getName () << std::endl;
+  }
+};
 #endif

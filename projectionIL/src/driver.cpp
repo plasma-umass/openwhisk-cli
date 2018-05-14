@@ -92,9 +92,25 @@ int main ()
   //test3
   {
     //X1 = A1 (input)
-    //while (X2) {
-    //  X3 = A2 (X2)
-    //  
+    //X1_ptr = store X1
+    //while (X1) {
+    //  X1 = load X1_ptr
+    //  X2 = A2 (X1)
+    //  store X4, X2_ptr
+    //  X1 = load X2_ptr
     //}
+    
+    //X1 = A1 (input)
+    //X1_ptr = store (X1)
+    //
+    //if 
+    
+    std::cout << "While Loop Test" << std::endl;
+    JSONIdentifier X1 ("X1"), X2 ("X2"), X3("X3"), X4("X4");
+    Pointer X2_ptr ("X2_ptr");
+    Input input;
+    
+    CallAction A1 (&X1, "A1", &input);
+    CallAction A2 (&
   }
 }
