@@ -127,30 +127,36 @@ public:
   CommandType getType() {return type;}
   virtual ~Command () {}
   virtual std::string getActionName () = 0;
+  virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
 };
 
 class SimpleCommand : public Command
 {
 public:
   SimpleCommand (): Command(SimpleCommandType) {}
-  virtual WhiskAction* convert () = 0;
+  virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
 };
 
 class ComplexCommand : public Command
-{
+{ //ComplexCommand is a basic block
 private:
   std::vector<SimpleCommand*> cmds;
   std::string actionName;
-  
+  bool converted;
+  WhiskSequence* seq;
+    
 public:
   ComplexCommand(std::vector<SimpleCommand*> _cmds): Command (ComplexCommandType), 
                                                     cmds(_cmds)
   {
     actionName = "Sequence_" + gen_random_str (WHISK_SEQ_NAME_LENGTH);
+    converted = false;
   }
   
   ComplexCommand(): Command (ComplexCommandType)
   {
+    converted = false;
+    actionName = "Sequence_" + gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
   void appendSimpleCommand (SimpleCommand* c)
@@ -160,15 +166,25 @@ public:
   
   const std::vector<SimpleCommand*>& getSimpleCommands() {return cmds;}
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     std::vector<WhiskAction*> actions;
+    if (converted) {
+      return seq;
+    }
+     
+    converted = true;
     
     for (auto cmd : cmds) {
-      actions.push_back (cmd->convert ());
+      WhiskAction* act;
+      act = cmd->convert (basicBlockCollection);
+      actions.push_back (act);
     }
     
-    return new WhiskSequence (getActionName (), actions);
+    seq = new WhiskSequence (getActionName (), actions);
+    basicBlockCollection.push_back (seq);
+    
+    return seq;
   }
   
   virtual std::string getActionName ()
@@ -190,7 +206,7 @@ public:
   
   JSONExpression* getReturnExpr() {return exp;}
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
                                 getReturnExpr ()->convert ());
@@ -213,8 +229,8 @@ public:
   {
     retVal->addCallStmt(this);
     callID++;
-    forkName = "Fork_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-    projName = actionName;
+    forkName = "Fork_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+    projName = "Proj_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
   }
   
   const JSONIdentifier* getReturnValue() {return retVal;}
@@ -225,7 +241,7 @@ public:
     return forkName;
   }
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     return new WhiskProjForkPair (new WhiskProjection (projName, arg->convert ()),
                                   new WhiskFork (getForkName (), getActionName ()));
@@ -256,7 +272,7 @@ public:
   const JSONIdentifier* getInput() {return in;}
   const JSONExpression* getTransformation() {return transformation;}
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     std::string code;
     
@@ -281,7 +297,7 @@ public:
   LetCommand (JSONIdentifier* _id, JSONExpression* _expr) : id(_id), expr(_expr) 
   {}
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     
   }
@@ -313,14 +329,15 @@ public:
     thenBranch->appendSimpleCommand (_thenBranch);
     elseBranch = new ComplexCommand ();
     elseBranch->appendSimpleCommand (_elseBranch);
+    seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
-  Command* getThenBranch () 
+  ComplexCommand* getThenBranch () 
   {
     return thenBranch;
   }
   
-  Command* getElseBranch ()
+  ComplexCommand* getElseBranch ()
   {
     return elseBranch;
   }
@@ -330,7 +347,7 @@ public:
     return expr;
   }
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     WhiskAction* proj;
     WhiskSequence* thenSeq;
@@ -339,16 +356,15 @@ public:
     std::string code;
     
     code = expr->convert ();
-    thenSeq = dynamic_cast <WhiskSequence*> (thenBranch->convert());
-    elseSeq = dynamic_cast <WhiskSequence*> (elseBranch->convert());
+    thenSeq = dynamic_cast <WhiskSequence*> (thenBranch->convert(basicBlockCollection));
+    elseSeq = dynamic_cast <WhiskSequence*> (elseBranch->convert(basicBlockCollection));
     code = "if ("+code+") then . * {\"action\": " + thenSeq->getName () + 
       "} else . * {\"action\":" + elseSeq->getName () + "}";
     proj = new WhiskProjection ("Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH),
                                 code);
     toReturn = new WhiskSequence (seqName);
     toReturn->appendAction (proj);
-    toReturn->appendAction (thenSeq);
-    toReturn->appendAction (elseSeq);
+    toReturn->appendAction (new WhiskApp ());
     
     return toReturn;
   }
@@ -374,7 +390,7 @@ public:
     return commandExprVector;
   }
   
-  virtual WhiskAction* convert () 
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection) 
   {
     std::string _finalString;
     int i;
@@ -425,7 +441,7 @@ public:
   LoadPointer (JSONIdentifier* _retVal, Pointer* _ptr) : CallAction (_retVal, "Load_ptr", _ptr)
   {}
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
      return new WhiskProjection (projName,
                                  ". * {\"saved\":{\""+retVal->convert () + "\":"+ptr->convert () + "}}");
@@ -451,7 +467,7 @@ public:
     projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     std::string code;
     
@@ -470,8 +486,9 @@ public:
   DirectBranch (Command* _target) : target(_target)
   {}
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
+    target->convert (basicBlockCollection);
     return new WhiskDirectBranch (target->getActionName ());
   }
   
@@ -498,7 +515,7 @@ public:
     cmds->appendSimpleCommand (_cmd);
   }
   
-  virtual WhiskAction* convert ()
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     //While Loop is a sequence of four actions:
     //1. Projection action. Which sees if the condition is valid and then
@@ -507,7 +524,7 @@ public:
     //3. A DirectBranch action to 1.
     //4. A dummy projection action to break out of the loop.
     
-    WhiskSequence* seq;
+    /*WhiskSequence* seq;
     WhiskSequence* cmdSeq;
     WhiskProjection* condProj;
     WhiskProjection* dummyAction;
@@ -517,7 +534,7 @@ public:
     std::string elseCode;
     
     dummyAction = new WhiskProjection ("Proj_LoopEnd_"+gen_random_str(WHISK_PROJ_NAME_LENGTH), ".");
-    cmdSeq = dynamic_cast <WhiskSequence*> (cmds->convert ());
+    cmdSeq = dynamic_cast <WhiskSequence*> (cmds->convert (basicBlockCollection));
     assert (cmdSeq != nullptr);
     seq = new WhiskSequence ("WhileLoop_Seq_" + gen_random_str(WHISK_SEQ_NAME_LENGTH));
     ifcode = "if (" + cond->convert () + " == true) ";
@@ -530,7 +547,7 @@ public:
     seq->appendAction (cmdSeq);
     seq->appendAction (dummyAction);
     
-    return seq;    
+    return seq;    */
   }
 };
 

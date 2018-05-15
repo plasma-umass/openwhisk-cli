@@ -21,25 +21,25 @@ std::string gen_random_str(const int len) {
   return str;
 }
 
-WhiskSequence* Converter::convert (Command* cmd)
+std::vector<WhiskSequence*> Converter::convert (Command* cmd)
 {
-  WhiskSequence* seq;
+  std::vector<WhiskSequence*> toRet;
   
   if (cmd->getType () == Command::SimpleCommandType) {
+    WhiskSequence* seq;
     seq = new WhiskSequence ("SEQUENCE_" + gen_random_str(WHISK_SEQ_NAME_LENGTH), 
-                             std::vector<WhiskAction*> (1, ((SimpleCommand*)cmd)->convert ()));
+                             std::vector<WhiskAction*> (1, ((SimpleCommand*)cmd)->convert (toRet)));
+    toRet.push_back (seq);
   }
   else if (cmd->getType () == Command::ComplexCommandType) {
     WhiskAction* act;
-    
-    act = ((ComplexCommand*)cmd)->convert ();
-    seq = (WhiskSequence*)act;
+    act = ((ComplexCommand*)cmd)->convert (toRet);
   }
   else {
     fprintf (stderr, "No conversion for %d specified", cmd->getType ());
   }
   
-  return seq;
+  return toRet;
 }
 
 int main ()
@@ -57,9 +57,12 @@ int main ()
     v.push_back(&CallA1);
     v.push_back(&CallA2);
     ComplexCommand allCmds(v);
-    WhiskSequence* seq = Converter::convert (&allCmds);
-    seq->generateCommand (std::cout);
-    //seq->print ();
+    std::vector<WhiskSequence*> seqs = Converter::convert (&allCmds);
+    for (auto seq : seqs) {
+        seq->generateCommand (std::cout);
+        std::cout << std::endl << std::endl;
+    }
+    seqs[0]->print ();
     std::cout << std::endl;
   }
   //test2
@@ -78,13 +81,24 @@ int main ()
     phi_v.push_back(std::make_pair (ifX1.getThenBranch (), &X2_1));
     phi_v.push_back(std::make_pair (ifX1.getElseBranch (), &X2_2));
     PHINode X2Phi(phi_v);
+    
+    ComplexCommand phi_block;
+    phi_block.appendSimpleCommand(&X2Phi);
+    ifX1.getThenBranch ()->appendSimpleCommand (new DirectBranch (&phi_block));
+    ifX1.getElseBranch ()->appendSimpleCommand (new DirectBranch (&phi_block));
+    
     std::vector<SimpleCommand*> v;
     v.push_back(&CallA1);
     v.push_back(&ifX1);
-    v.push_back(&X2Phi);
-    ComplexCommand allCmds(v);
-    WhiskSequence* seq = Converter::convert (&allCmds);
-    seq->generateCommand (std::cout);
+    
+    ComplexCommand cmd1(v);
+    
+    std::vector<WhiskSequence*> seqs = Converter::convert (&cmd1);
+    
+    for (auto seq : seqs) {
+        seq->generateCommand (std::cout);
+        std::cout << std::endl << std::endl;
+    }
     //seq->print ();
     std::cout << std::endl;
   }
@@ -111,6 +125,6 @@ int main ()
     Input input;
     
     CallAction A1 (&X1, "A1", &input);
-    CallAction A2 (&
+    //~ CallAction A2 (&
   }
 }

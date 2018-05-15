@@ -70,7 +70,7 @@ public:
     }
     
     os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " << getName () << " --sequence ";
-    for (int i = 0; i < actions.size (); i++) {
+    for (int i = 0; i < actions.size () - 1; i++) {
       os << actions[i]->getNameForSeq () << ", ";
     }
     
@@ -186,7 +186,7 @@ public:
   
   virtual void generateCommand (std::ostream& os)
   {
-    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action invoke " << getName () << std::endl;
+    //os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action invoke " << getName () << std::endl;
   }
 };
 
@@ -194,10 +194,15 @@ class WhiskDirectBranch : public WhiskApp
 {
 private:
   std::string target;
-
+  WhiskProjection* proj;
+  
 public:
   WhiskDirectBranch (std::string _target) : target(_target)
-  {}
+  {
+    proj = new WhiskProjection ("Proj_DirectBranch_" +gen_random_str (WHISK_PROJ_NAME_LENGTH), 
+                       ". * {\"action\":" + target+"}"); //TODO: Wrap correctly in app.
+    
+  }
   
   virtual void print ()
   {
@@ -206,10 +211,10 @@ public:
   
   virtual void generateCommand (std::ostream& os)
   {
-    WhiskProjection p ("Proj_DirectBranch_" +gen_random_str (WHISK_PROJ_NAME_LENGTH), 
-                       ". * {\"action\":" + target+"}"); //TODO: Wrap correctly in app.
-    p.generateCommand (os);
-    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action invoke " << getName () << std::endl;
+    proj->generateCommand (os);
+    //os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action invoke " << getName () << std::endl;
   }
+  
+  virtual std::string getNameForSeq () {return std::string(proj->getName ()) + ", App";}
 };
 #endif

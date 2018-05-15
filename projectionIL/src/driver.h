@@ -1,3 +1,5 @@
+#include <vector>
+
 #include "ast.h"
 #include "whisk_action.h"
 
@@ -7,7 +9,7 @@
 class Converter
 {
 public:
-  static WhiskSequence* convert(Command* cmd);
+  static std::vector<WhiskSequence*> convert(Command* cmd);
 };
 
 #endif /*__DRIVER_H__*/
