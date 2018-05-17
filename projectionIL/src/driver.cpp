@@ -41,6 +41,51 @@ std::vector<WhiskSequence*> Converter::convert (Command* cmd)
   return toRet;
 }
 
+IRNode* convertToSSAIR (ASTNode* astNode)
+{
+  if (dynamic_cast <JSONIdentifier*> (astNode) != nullptr) {
+    JSONIdentifier* jsonId;
+    
+    jsonId = dynamic_cast <JSONIdentifier*> (astNode);
+    return new Identifier (jsonId->getIdentifier ());
+  } else if (dynamic_cast <ReturnJSON*> (astNode) != nullptr) {
+    ReturnJSON* retJson;
+    
+    retJson = dynamic_cast <ReturnJSON*> (astNode);
+    abort (); //return new Return ((Expression*)convertToSSAIR (retJson->getReturnExpr ()));
+  } else if (dynamic_cast <CallAction*> (astNode) != nullptr) {
+    CallAction* callAction;
+    
+    callAction = dynamic_cast <CallAction*> (astNode);
+    return new Call ((Identifier*)convertToSSAIR (callAction->getReturnValue ()),
+                     callAction->getActionName (),
+                     (Expression*)convertToSSAIR (callAction->getArgument ()));
+  } else if (dynamic_cast <JSONTransformation*> (astNode) != nullptr) {
+    abort ();
+  } else if (dynamic_cast <LetCommand*> (astNode) != nullptr) {
+    abort ();
+  } else if (dynamic_cast <JSONPointer*> (astNode) != nullptr) {
+  } else if (dynamic_cast <LoadJSONPointer*> (astNode) != nullptr) {
+  } else if (dynamic_cast <StoreJSONPointer*> (astNode) != nullptr) {
+  } else if (dynamic_cast <NumberExpression*> (astNode) != nullptr) {
+  } else if (dynamic_cast <StringExpression*> (astNode) != nullptr) {
+  } else if (dynamic_cast <BooleanExpression*> (astNode) != nullptr) {
+  } else if (dynamic_cast <JSONArrayExpression*> (astNode) != nullptr) {
+  } else if (dynamic_cast <KeyValuePair*> (astNode) != nullptr) {
+  } else if (dynamic_cast <JSONObjectExpression*> (astNode) != nullptr) {
+  } else if (dynamic_cast <Input*> (astNode) != nullptr) {
+  } else if (dynamic_cast <JSONPatternApplication*> (astNode) != nullptr) {
+  } else if (dynamic_cast <FieldGetJSONPattern*> (astNode) != nullptr) {
+  } else if (dynamic_cast <ArrayIndexJSONPattern*> (astNode) != nullptr) {
+  } else if (dynamic_cast <KeyGetJSONPattern*> (astNode) != nullptr) {
+  } else {
+    fprintf (stderr, "Invalid AstNode type\n");
+    abort ();
+  }
+  
+  abort ();
+}
+
 BasicBlock* convertToSSA (ComplexCommand* complexCmd, std::vector<BasicBlock*>& basicBlocks)
 {
   //This function takes one ComplexCommand containing all other
@@ -53,26 +98,28 @@ BasicBlock* convertToSSA (ComplexCommand* complexCmd, std::vector<BasicBlock*>& 
   BasicBlock* currBasicBlock = firstBasicBlock;
   basicBlocks.push_back (firstBasicBlock);
   
-  for (auto cmd : complexCmd->getSimpleCommands()) {
-    currBasicBlock->appendSimpleCommand (cmd);
-    
+  for (auto cmd : complexCmd->getSimpleCommands()) {    
     if (dynamic_cast <IfThenElseCommand*> (cmd) != nullptr) {
       //basicBlocks.append(new BasicBlock ());
       BasicBlock* thenBasicBlock;
       BasicBlock* elseBasicBlock;
       IfThenElseCommand* ifThenElsecmd;
+      ConditionalBranch *condBr;
       
       ifThenElsecmd = dynamic_cast <IfThenElseCommand*> (cmd);
       thenBasicBlock = convertToSSA (ifThenElsecmd->getThenBranch (), basicBlocks);
       elseBasicBlock = convertToSSA (ifThenElsecmd->getElseBranch (), basicBlocks);
-      ifThenElsecmd->setThenBranch (thenBasicBlock);
-      ifThenElsecmd->setElseBranch (elseBasicBlock);
-      
+
+      condBr = new ConditionalBranch ((Expression*) convertToSSAIR (ifThenElsecmd->getCondition ()),
+                                      thenBasicBlock, elseBasicBlock);
+      currBasicBlock->appendInstruction (condBr);
       currBasicBlock = new BasicBlock ();
       basicBlocks.push_back (currBasicBlock);
-      //thenBasicBlock->appendSimpleCommand (new DirectBranch (currBasicBlock));
-      //elseBasicBlock->appendSimpleCommand (new DirectBranch (currBasicBlock));
-    } 
+      thenBasicBlock->appendInstruction (new DirectBranch (currBasicBlock));
+      elseBasicBlock->appendInstruction (new DirectBranch (currBasicBlock));
+    } else {
+      currBasicBlock->appendInstruction ((Instruction*)convertToSSAIR (cmd));
+    }
   }
   
   return firstBasicBlock;
@@ -86,7 +133,7 @@ int main ()
     // X2 = A2 (X1)
     std::cout << "Test 1" << std::endl;
     JSONIdentifier X1("X1"), X2("X2");
-    Input input;
+    JSONInput input;
     CallAction CallA1(&X1, "A1", &input);
     CallAction CallA2(&X2, "A2", &X1);
     std::vector<SimpleCommand*> v;
@@ -113,7 +160,7 @@ int main ()
     //X3 = A4 (X2)
     std::cout << "If then else "<< std::endl;
     JSONIdentifier X1("X1"), X2("X2"), X3 ("X3");
-    Input input;
+    JSONInput input;
     CallAction CallA1(&X1, "A1", &input);
     CallAction CallA2(&X2, "A2", &X1);
     CallAction CallA3(&X2, "A3", &X1);

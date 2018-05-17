@@ -96,22 +96,24 @@ class JSONIdentifier : public JSONExpression
 {
 private:
   std::string identifier;
-  std::map   <uint32_t, CallAction*> callStmtsToInt;
-  std::unordered_set <CallAction*> callStmts;
+  CallAction* callStmt;
   
 public:
   JSONIdentifier (std::string id, CallAction* _callStmt) : 
     identifier(id)
   {
-    addCallStmt (_callStmt);
+    callStmt = _callStmt;
   }
   
   JSONIdentifier (std::string id) : identifier(id)
   {
+    callStmt = nullptr;
   }
   
-  void addCallStmt(CallAction* _callStmt);
+  void setCallStmt(CallAction* _callStmt);
   virtual std::string convert ();
+  std::string getIdentifier () {return identifier;}
+  CallAction* getCallStmt () {return callStmt;}
   
   virtual void print (std::ostream& os)
   {
@@ -208,36 +210,13 @@ public:
   }
 };
 
-class BasicBlock : public ComplexCommand
-{
-private:
-  std::string name;
-  static int numberOfBasicBlocks;
-public:
-  BasicBlock () : ComplexCommand () 
-  {
-    name = "#" + std::to_string (numberOfBasicBlocks);
-    numberOfBasicBlocks++;
-  }
-  
-  std::string getBasicBlockName () {return name;}
-  
-  virtual void print (std::ostream& os)
-  {
-    os << name <<":" << std::endl;
-    for (auto cmd : cmds) {
-      cmd->print (os);
-    }
-  }
-};
-
-class Return : public Command
+class ReturnJSON : public Command
 {
 private:
   JSONExpression* exp;
   
 public:
-  Return (JSONExpression* _exp) : Command (ReturnCommandType)
+  ReturnJSON (JSONExpression* _exp) : Command (ReturnCommandType)
   {
     exp = _exp;
   }
@@ -265,15 +244,15 @@ public:
   CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONExpression* _arg) : 
     SimpleCommand(), retVal(_retVal), actionName (_actionName), arg(_arg) 
   {
-    retVal->addCallStmt(this);
+    //retVal->setCallStmt(this);
     callID++;
     forkName = "Fork_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
     projName = "Proj_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
   }
   
-  const JSONIdentifier* getReturnValue() {return retVal;}
+  JSONIdentifier* getReturnValue() {return retVal;}
   virtual std::string getActionName() {return actionName;}
-  const JSONExpression* getArgument() {return arg;}
+  JSONExpression* getArgument() {return arg;}
   virtual std::string getForkName() 
   {
     return forkName;
@@ -439,56 +418,12 @@ public:
   
   virtual void print (std::ostream& os)
   {
-    os << "if (";
+    /*os << "if (";
     expr->print (os);
-    os << ") then goto " << dynamic_cast <BasicBlock*> (thenBranch)->getBasicBlockName ();
-    os << " else goto " << dynamic_cast <BasicBlock*> (elseBranch)->getBasicBlockName () << std::endl;
-    dynamic_cast <BasicBlock*> (thenBranch)->print (os);
-    dynamic_cast <BasicBlock*> (elseBranch)->print (os);
-  }
-};
-
-class PHINode : public SimpleCommand 
-{
-private:
-  std::vector<std::pair<Command*, JSONIdentifier*> > commandExprVector;
-  std::string projName;
-  
-public:
-  PHINode (std::vector<std::pair<Command*, JSONIdentifier*> > _commandExprVector) :
-    commandExprVector (_commandExprVector)
-  {
-    projName = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
-  }
-  
-  const std::vector<std::pair<Command*, JSONIdentifier*> >& getCommandExprVector ()
-  {
-    return commandExprVector;
-  }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection) 
-  {
-    std::string _finalString;
-    int i;
-    
-    for (i = 0; i < commandExprVector.size () - 1; i++) {
-      _finalString += "if ("+ commandExprVector[i].second->convert() +
-        " != null) then " + commandExprVector[i].second->convert();
-      _finalString += " else ( ";
-    }
-    
-    _finalString += commandExprVector[i].second->convert();
-    
-    for (i = 0; i < commandExprVector.size (); i++) {
-      _finalString += ")";
-    }
-    
-    return new WhiskProjection (projName, _finalString);
-  }
-  
-  virtual std::string getActionName ()
-  {
-    return projName;
+    os << ") then goto " << thenBranch->getBasicBlockName ();
+    os << " else goto " << elseBranch)->getBasicBlockName () << std::endl;
+    thenBranch->print (os);
+    elseBranch->print (os);*/
   }
 };
 
@@ -727,10 +662,10 @@ public:
   }
 };
 
-class Input : public JSONIdentifier 
+class JSONInput : public JSONIdentifier 
 {
 public:
-  Input () : JSONIdentifier ("input") {}
+  JSONInput () : JSONIdentifier ("input") {}
   std::string convert ()
   {    
     return ".saved.input";

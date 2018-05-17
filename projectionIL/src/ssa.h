@@ -35,7 +35,7 @@ class Identifier : public Expression
 {
 private:
   std::string identifier;
-  Call callStmt;
+  Call* callStmt;
   
 public:
   Identifier (std::string id, Call* _callStmt) : 
