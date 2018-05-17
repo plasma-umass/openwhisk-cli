@@ -1,6 +1,7 @@
 #include "ast.h"
 
 int CallAction::callID = 0;
+int BasicBlock::numberOfBasicBlocks = 0;
 
 void JSONIdentifier::addCallStmt(CallAction* _callStmt) 
 {

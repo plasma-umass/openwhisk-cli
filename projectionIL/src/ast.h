@@ -81,6 +81,9 @@ class ASTNode
 {
 protected:
   ASTNode () {}
+public:
+  virtual void print (std::ostream& os) = 0;
+  virtual ~ASTNode () {}
 };
 
 class JSONExpression : public ASTNode
@@ -109,6 +112,11 @@ public:
   
   void addCallStmt(CallAction* _callStmt);
   virtual std::string convert ();
+  
+  virtual void print (std::ostream& os)
+  {
+    os << identifier;
+  }
 };
 
 class Command : public ASTNode
@@ -138,8 +146,8 @@ public:
 };
 
 class ComplexCommand : public Command
-{ //ComplexCommand is a basic block
-private:
+{
+protected:
   std::vector<SimpleCommand*> cmds;
   std::string actionName;
   bool converted;
@@ -190,6 +198,36 @@ public:
   virtual std::string getActionName ()
   {
     return actionName;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    for (auto cmd : cmds) {
+      cmd->print (os);
+    }
+  }
+};
+
+class BasicBlock : public ComplexCommand
+{
+private:
+  std::string name;
+  static int numberOfBasicBlocks;
+public:
+  BasicBlock () : ComplexCommand () 
+  {
+    name = "#" + std::to_string (numberOfBasicBlocks);
+    numberOfBasicBlocks++;
+  }
+  
+  std::string getBasicBlockName () {return name;}
+  
+  virtual void print (std::ostream& os)
+  {
+    os << name <<":" << std::endl;
+    for (auto cmd : cmds) {
+      cmd->print (os);
+    }
   }
 };
 
@@ -251,6 +289,14 @@ public:
   {
     return projName;
   }
+  
+  virtual void print (std::ostream& os)
+  {
+    retVal->print (os);
+    os << " = " << actionName << "(";
+    arg->print (os);
+    os << ");" << std::endl;
+  }
 };
 
 class JSONTransformation : public SimpleCommand
@@ -284,6 +330,16 @@ public:
   virtual std::string getActionName ()
   {
     return name;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    out->print(os);
+    os << " = " ;
+    transformation->print (os);
+    os << "(";
+    in->print (os);
+    os << ")" << std::endl; 
   }
 };
 
@@ -342,6 +398,16 @@ public:
     return elseBranch;
   }
   
+  void setThenBranch (ComplexCommand* _thenBranch)
+  {
+    thenBranch = _thenBranch;
+  }
+  
+  void setElseBranch (ComplexCommand* _elseBranch)
+  {
+    elseBranch = _elseBranch;
+  }
+  
   JSONExpression* getCondition ()
   {
     return expr;
@@ -370,6 +436,16 @@ public:
   }
   
   virtual std::string getActionName () {return seqName;}
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "if (";
+    expr->print (os);
+    os << ") then goto " << dynamic_cast <BasicBlock*> (thenBranch)->getBasicBlockName ();
+    os << " else goto " << dynamic_cast <BasicBlock*> (elseBranch)->getBasicBlockName () << std::endl;
+    dynamic_cast <BasicBlock*> (thenBranch)->print (os);
+    dynamic_cast <BasicBlock*> (elseBranch)->print (os);
+  }
 };
 
 class PHINode : public SimpleCommand 
@@ -416,13 +492,13 @@ public:
   }
 };
 
-class Pointer : public JSONExpression
+class JSONPointer : public JSONExpression
 {
 private:
   std::string name;
 
 public:
-  Pointer (std::string _name) : name(_name) {}
+  JSONPointer (std::string _name) : name(_name) {}
   
   std::string getName () {return name;}
   
@@ -432,13 +508,13 @@ public:
   }
 };
 
-class LoadPointer : public CallAction
+class LoadJSONPointer : public CallAction
 {
 private:
-  Pointer* ptr;
+  JSONPointer* ptr;
 
 public:
-  LoadPointer (JSONIdentifier* _retVal, Pointer* _ptr) : CallAction (_retVal, "Load_ptr", _ptr)
+  LoadJSONPointer (JSONIdentifier* _retVal, JSONPointer* _ptr) : CallAction (_retVal, "Load_ptr", _ptr)
   {}
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
@@ -454,15 +530,15 @@ public:
   }
 };
 
-class StorePointer : public SimpleCommand
+class StoreJSONPointer : public SimpleCommand
 {
 private:
   JSONExpression* expr;
-  Pointer* ptr;
+  JSONPointer* ptr;
   std::string projName;
   
 public:
-  StorePointer (JSONExpression* _expr, Pointer* _ptr) : expr(_expr), ptr(_ptr) 
+  StoreJSONPointer (JSONExpression* _expr, JSONPointer* _ptr) : expr(_expr), ptr(_ptr) 
   {
     projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
@@ -474,28 +550,6 @@ public:
     code = ". * { \"saved\" : {\" " + ptr->getName () + "\":" + expr->convert () + "}";
     
     return new WhiskProjection (projName, code);
-  }
-};
-
-class DirectBranch : public SimpleCommand 
-{
-private:
-  Command* target;
-
-public:
-  DirectBranch (Command* _target) : target(_target)
-  {}
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    target->convert (basicBlockCollection);
-    return new WhiskDirectBranch (target->getActionName ());
-  }
-  
-  virtual std::string getActionName ()
-  {
-    fprintf (stderr, "DirectBranch::getActionName should not be called\n");
-    abort ();
   }
 };
 
@@ -683,24 +737,24 @@ public:
   }
 };
 
-class Pattern : public ASTNode
+class JSONPattern : public ASTNode
 {
 public:
   virtual std::string convert () = 0;
 };
 
-class PatternApplication : public JSONExpression
+class JSONPatternApplication : public JSONExpression
 {
 private:
   JSONExpression* expr;
-  Pattern* pat;
+  JSONPattern* pat;
   
 public:
-  PatternApplication (JSONExpression* _expr, Pattern* _pat): expr(_expr), pat(_pat)
+  JSONPatternApplication (JSONExpression* _expr, JSONPattern* _pat): expr(_expr), pat(_pat)
   {
   }
   
-  Pattern* getPattern () {return pat;}
+  JSONPattern* getPattern () {return pat;}
   
   JSONExpression* getExpression () {return expr;}
   
@@ -710,13 +764,13 @@ public:
   }
 };
 
-class FieldGet : public Pattern
+class FieldGetJSONPattern : public JSONPattern
 {
 private:
   std::string fieldName;
   
 public:
-  FieldGet (std::string _fieldName) : fieldName(_fieldName) 
+  FieldGetJSONPattern (std::string _fieldName) : fieldName(_fieldName) 
   {
   }
   
@@ -726,13 +780,13 @@ public:
   }
 };
 
-class ArrayIndex : public Pattern
+class ArrayIndexJSONPattern : public JSONPattern
 {
 private:
   int index;
   
 public:
-  ArrayIndex (int _index) : index(_index) 
+  ArrayIndexJSONPattern (int _index) : index(_index) 
   {
   }
   
@@ -742,13 +796,13 @@ public:
   }
 };
 
-class KeyGet : public Pattern
+class KeyGetJSONPattern : public JSONPattern
 {
 private:
   std::string keyName;
   
 public:
-  KeyGet (std::string _keyName) : keyName(_keyName) 
+  KeyGetJSONPattern (std::string _keyName) : keyName(_keyName) 
   {
   }
   

@@ -1,4 +1,5 @@
 #include "driver.h"
+#include "ssa.h"
 
 #include <vector>
 #include <string>
@@ -7,11 +8,9 @@
 
 #define MAX_SEQ_NAME_SIZE 10
 
-std::string gen_random_str(const int len) {
-  static const char alphanum[] =
-        "0123456789"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz";
+std::string gen_random_str(const int len)
+{
+  static const char alphanum[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   std::string str = "";
     
   for (int i = 0; i < len; ++i) {
@@ -42,6 +41,43 @@ std::vector<WhiskSequence*> Converter::convert (Command* cmd)
   return toRet;
 }
 
+BasicBlock* convertToSSA (ComplexCommand* complexCmd, std::vector<BasicBlock*>& basicBlocks)
+{
+  //This function takes one ComplexCommand containing all other
+  //simple commands.
+  
+  //First convert ComplexCommand to a set of Basic Blocks connected
+  //by branches.
+  
+  BasicBlock* firstBasicBlock = new BasicBlock ();
+  BasicBlock* currBasicBlock = firstBasicBlock;
+  basicBlocks.push_back (firstBasicBlock);
+  
+  for (auto cmd : complexCmd->getSimpleCommands()) {
+    currBasicBlock->appendSimpleCommand (cmd);
+    
+    if (dynamic_cast <IfThenElseCommand*> (cmd) != nullptr) {
+      //basicBlocks.append(new BasicBlock ());
+      BasicBlock* thenBasicBlock;
+      BasicBlock* elseBasicBlock;
+      IfThenElseCommand* ifThenElsecmd;
+      
+      ifThenElsecmd = dynamic_cast <IfThenElseCommand*> (cmd);
+      thenBasicBlock = convertToSSA (ifThenElsecmd->getThenBranch (), basicBlocks);
+      elseBasicBlock = convertToSSA (ifThenElsecmd->getElseBranch (), basicBlocks);
+      ifThenElsecmd->setThenBranch (thenBasicBlock);
+      ifThenElsecmd->setElseBranch (elseBasicBlock);
+      
+      currBasicBlock = new BasicBlock ();
+      basicBlocks.push_back (currBasicBlock);
+      //thenBasicBlock->appendSimpleCommand (new DirectBranch (currBasicBlock));
+      //elseBasicBlock->appendSimpleCommand (new DirectBranch (currBasicBlock));
+    } 
+  }
+  
+  return firstBasicBlock;
+}
+
 int main ()
 {
   //test1
@@ -57,51 +93,90 @@ int main ()
     v.push_back(&CallA1);
     v.push_back(&CallA2);
     ComplexCommand allCmds(v);
-    std::vector<WhiskSequence*> seqs = Converter::convert (&allCmds);
-    for (auto seq : seqs) {
-        seq->generateCommand (std::cout);
-        std::cout << std::endl << std::endl;
-    }
-    seqs[0]->print ();
+    
+    std::vector<BasicBlock*> basicBlocks;
+    BasicBlock* firstBlock = convertToSSA (&allCmds, basicBlocks);
+    firstBlock->print (std::cout);
+    //~ std::vector<WhiskSequence*> seqs = Converter::convert (&allCmds);
+    //~ for (auto seq : seqs) {
+        //~ seq->generateCommand (std::cout);
+        //~ std::cout << std::endl << std::endl;
+    //~ }
+    //~ seqs[0]->print ();
     std::cout << std::endl;
   }
   //test2
-  {
+  
+   {
     //X1 = A1 (input)
-    //if X1 then X2_1 = A2(X1) else X2_2 = A3(X1)
-    //X2 = phi(then, X2_1, else, X2_2)
+    //if X1 then X2 = A2(X1) else X2 = A3(X1)
+    //X3 = A4 (X2)
     std::cout << "If then else "<< std::endl;
-    JSONIdentifier X1("X1"), X2("X2"), X2_1("X2_1"), X2_2("X2_2");
+    JSONIdentifier X1("X1"), X2("X2"), X3 ("X3");
     Input input;
     CallAction CallA1(&X1, "A1", &input);
-    CallAction CallA2(&X2_1, "A2", &X1);
-    CallAction CallA3(&X2_2, "A3", &X1);
+    CallAction CallA2(&X2, "A2", &X1);
+    CallAction CallA3(&X2, "A3", &X1);
     IfThenElseCommand ifX1(&X1, &CallA2, &CallA3);
-    std::vector<std::pair<Command*, JSONIdentifier*> > phi_v;
-    phi_v.push_back(std::make_pair (ifX1.getThenBranch (), &X2_1));
-    phi_v.push_back(std::make_pair (ifX1.getElseBranch (), &X2_2));
-    PHINode X2Phi(phi_v);
-    
-    ComplexCommand phi_block;
-    phi_block.appendSimpleCommand(&X2Phi);
-    ifX1.getThenBranch ()->appendSimpleCommand (new DirectBranch (&phi_block));
-    ifX1.getElseBranch ()->appendSimpleCommand (new DirectBranch (&phi_block));
-    
+    CallAction CallA4(&X3, "A4", &X2);
     std::vector<SimpleCommand*> v;
     v.push_back(&CallA1);
     v.push_back(&ifX1);
+    v.push_back(&CallA4);
     
     ComplexCommand cmd1(v);
     
-    std::vector<WhiskSequence*> seqs = Converter::convert (&cmd1);
+    std::vector<BasicBlock*> basicBlocks;
+    BasicBlock* firstBlock = convertToSSA (&cmd1, basicBlocks);
+    firstBlock->print (std::cout);
+    std::cout << std::endl;
     
-    for (auto seq : seqs) {
-        seq->generateCommand (std::cout);
-        std::cout << std::endl << std::endl;
-    }
+    //std::vector<WhiskSequence*> seqs = Converter::convert (&cmd1);
+    
+    //for (auto seq : seqs) {
+//        seq->generateCommand (std::cout);
+  //      std::cout << std::endl << std::endl;
+    //}
     //seq->print ();
     std::cout << std::endl;
   }
+  
+  //~ {
+    //~ //X1 = A1 (input)
+    //~ //if X1 then X2_1 = A2(X1) else X2_2 = A3(X1)
+    //~ //X2 = phi(then, X2_1, else, X2_2)
+    //~ std::cout << "If then else "<< std::endl;
+    //~ JSONIdentifier X1("X1"), X2("X2"), X2_1("X2_1"), X2_2("X2_2");
+    //~ Input input;
+    //~ CallAction CallA1(&X1, "A1", &input);
+    //~ CallAction CallA2(&X2_1, "A2", &X1);
+    //~ CallAction CallA3(&X2_2, "A3", &X1);
+    //~ IfThenElseCommand ifX1(&X1, &CallA2, &CallA3);
+    //~ std::vector<std::pair<Command*, JSONIdentifier*> > phi_v;
+    //~ phi_v.push_back(std::make_pair (ifX1.getThenBranch (), &X2_1));
+    //~ phi_v.push_back(std::make_pair (ifX1.getElseBranch (), &X2_2));
+    //~ PHINode X2Phi(phi_v);
+    
+    //~ ComplexCommand phi_block;
+    //~ phi_block.appendSimpleCommand(&X2Phi);
+    //~ ifX1.getThenBranch ()->appendSimpleCommand (new DirectBranch (&phi_block));
+    //~ ifX1.getElseBranch ()->appendSimpleCommand (new DirectBranch (&phi_block));
+    
+    //~ std::vector<SimpleCommand*> v;
+    //~ v.push_back(&CallA1);
+    //~ v.push_back(&ifX1);
+    
+    //~ ComplexCommand cmd1(v);
+    
+    //~ std::vector<WhiskSequence*> seqs = Converter::convert (&cmd1);
+    
+    //~ for (auto seq : seqs) {
+        //~ seq->generateCommand (std::cout);
+        //~ std::cout << std::endl << std::endl;
+    //~ }
+    //~ //seq->print ();
+    //~ std::cout << std::endl;
+  //~ }
   
   //test3
   {
@@ -119,12 +194,12 @@ int main ()
     //
     //if 
     
-    std::cout << "While Loop Test" << std::endl;
-    JSONIdentifier X1 ("X1"), X2 ("X2"), X3("X3"), X4("X4");
-    Pointer X2_ptr ("X2_ptr");
-    Input input;
+    //~ std::cout << "While Loop Test" << std::endl;
+    //~ JSONIdentifier X1 ("X1"), X2 ("X2"), X3("X3"), X4("X4");
+    //~ Pointer X2_ptr ("X2_ptr");
+    //~ Input input;
     
-    CallAction A1 (&X1, "A1", &input);
+    //~ CallAction A1 (&X1, "A1", &input);
     //~ CallAction A2 (&
   }
 }
