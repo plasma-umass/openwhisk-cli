@@ -1,8 +1,7 @@
 #include <string>
 #include <iostream>
 #include <vector>
-#include <unordered_set>
-#include <map>
+#include <unordered_map>
 #include <utility>
 
 #include <assert.h>
@@ -36,17 +35,27 @@ class Identifier : public Expression
 private:
   std::string identifier;
   Call* callStmt;
+  static std::unordered_map <std::string, std::vector <Identifier*> > identifiers;
   
 public:
   Identifier (std::string id, Call* _callStmt) : 
     identifier(id), callStmt (_callStmt)
-  {}
+  {
+    if (identifiers.find(id) == identifiers.end ())
+      identifiers [id] = std::vector <Identifier*> ();
+    identifiers [id].push_back (this);
+  }
   
   Identifier (std::string id) : identifier(id)
-  {}
+  {
+    if (identifiers.find(id) == identifiers.end ())
+      identifiers [id] = std::vector <Identifier*> ();
+    identifiers [id].push_back (this);
+  }
   
   void setCallStmt(Call* _callStmt);
   virtual std::string convert ();
+  std::string getID () const {return identifier;}
   
   virtual void print (std::ostream& os)
   {
@@ -73,6 +82,7 @@ protected:
   WhiskSequence* seq;
   std::string basicBlockName;
   static int numberOfBasicBlocks;
+  std::vector <BasicBlock*> predecessors;
   
 public:
   BasicBlock(std::vector<Instruction*> _cmds): Instruction (), 
@@ -96,6 +106,13 @@ public:
   {
     cmds.push_back(c);
   }
+  
+  void appendPredecessor (BasicBlock* bb)
+  {
+    predecessors.push_back (bb);
+  }
+  
+  std::vector <BasicBlock*>& getPredecessors () {return predecessors;}
   
   const std::vector<Instruction*>& getInstructions() {return cmds;}
   
@@ -177,6 +194,9 @@ public:
   const Identifier* getReturnValue() {return retVal;}
   virtual std::string getActionName() {return actionName;}
   const Expression* getArgument() {return arg;}
+  void setReturnValue (Identifier* ret) {retVal = ret;}
+  void setArgument (Expression* _arg) {arg = _arg;}
+  
   virtual std::string getForkName() 
   {
     return forkName;
@@ -270,14 +290,18 @@ private:
   BasicBlock* thenBranch;
   BasicBlock* elseBranch;
   std::string seqName;
+  BasicBlock* parent;
   
 public:
   ConditionalBranch (Expression* _expr, BasicBlock* _thenBranch, 
-                     BasicBlock* _elseBranch)
+                     BasicBlock* _elseBranch, BasicBlock* _parent)
   {
     expr = _expr;
     thenBranch = _thenBranch;
     elseBranch = _elseBranch;
+    parent = _parent;
+    thenBranch->appendPredecessor (parent);
+    elseBranch->appendPredecessor (parent);
     seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
@@ -347,8 +371,8 @@ public:
     expr->print (os);
     os << ") then goto " << thenBranch->getBasicBlockName ();
     os << " else goto " << elseBranch->getBasicBlockName () << std::endl;
-    thenBranch->print (os);
-    elseBranch->print (os);
+    //thenBranch->print (os);
+    //elseBranch->print (os);
   }
 };
 
@@ -461,10 +485,13 @@ class DirectBranch : public Instruction
 {
 private:
   BasicBlock* target;
-
+  BasicBlock* parent;
+  
 public:
-  DirectBranch (BasicBlock* _target) : target(_target)
-  {}
+  DirectBranch (BasicBlock* _target, BasicBlock *_parent) : target(_target), parent(_parent)
+  {
+    target->appendPredecessor (parent);
+  }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
@@ -481,7 +508,7 @@ public:
   virtual void print (std::ostream& os) 
   {
     os << "goto " << target->getBasicBlockName () << std::endl;
-    target->print (os);
+    //target->print (os);
   }
 };
 

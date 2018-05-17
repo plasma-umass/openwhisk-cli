@@ -1,6 +1,7 @@
 #include "ssa.h"
 
 int BasicBlock::numberOfBasicBlocks = 0;
+std::unordered_map <std::string, std::vector <Identifier*> > Identifier::identifiers;
 
 void Identifier::setCallStmt(Call* _callStmt) 
 {

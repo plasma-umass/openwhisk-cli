@@ -293,9 +293,9 @@ public:
     name = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
   
-  const JSONIdentifier* getOutput() {return out;}
-  const JSONIdentifier* getInput() {return in;}
-  const JSONExpression* getTransformation() {return transformation;}
+  JSONIdentifier* getOutput() {return out;}
+  JSONIdentifier* getInput() {return in;}
+  JSONExpression* getTransformation() {return transformation;}
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
@@ -310,6 +310,7 @@ public:
   {
     return name;
   }
+  
   
   virtual void print (std::ostream& os)
   {
@@ -424,67 +425,6 @@ public:
     os << " else goto " << elseBranch)->getBasicBlockName () << std::endl;
     thenBranch->print (os);
     elseBranch->print (os);*/
-  }
-};
-
-class JSONPointer : public JSONExpression
-{
-private:
-  std::string name;
-
-public:
-  JSONPointer (std::string _name) : name(_name) {}
-  
-  std::string getName () {return name;}
-  
-  virtual std::string convert () 
-  {
-    return ".saved."+name;
-  }
-};
-
-class LoadJSONPointer : public CallAction
-{
-private:
-  JSONPointer* ptr;
-
-public:
-  LoadJSONPointer (JSONIdentifier* _retVal, JSONPointer* _ptr) : CallAction (_retVal, "Load_ptr", _ptr)
-  {}
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-     return new WhiskProjection (projName,
-                                 ". * {\"saved\":{\""+retVal->convert () + "\":"+ptr->convert () + "}}");
-  }
-  
-  virtual std::string getForkName() 
-  {
-    fprintf(stderr, "LoadPointer::getForkName() should not be called\n");
-    abort ();
-  }
-};
-
-class StoreJSONPointer : public SimpleCommand
-{
-private:
-  JSONExpression* expr;
-  JSONPointer* ptr;
-  std::string projName;
-  
-public:
-  StoreJSONPointer (JSONExpression* _expr, JSONPointer* _ptr) : expr(_expr), ptr(_ptr) 
-  {
-    projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
-  }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    std::string code;
-    
-    code = ". * { \"saved\" : {\" " + ptr->getName () + "\":" + expr->convert () + "}";
-    
-    return new WhiskProjection (projName, code);
   }
 };
 
