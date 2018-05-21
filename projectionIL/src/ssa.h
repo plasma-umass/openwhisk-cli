@@ -376,15 +376,17 @@ public:
   }
 };
 
-class PHI : public Instruction 
+class PHI : public Instruction
 {
 private:
   std::vector<std::pair<BasicBlock*, Identifier*> > commandExprVector;
   std::string projName;
+  Identifier* output;
   
 public:
-  PHI (std::vector<std::pair<BasicBlock*, Identifier*> > _commandExprVector) :
-    commandExprVector (_commandExprVector)
+  PHI (Identifier* _output, 
+       std::vector<std::pair<BasicBlock*, Identifier*> > _commandExprVector) :
+    commandExprVector (_commandExprVector), output (_output)
   {
     projName = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
@@ -417,6 +419,19 @@ public:
   virtual std::string getActionName ()
   {
     return projName;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    output->print (os);
+    os << " = ";
+    os << "phi ";
+    os << "[";
+    
+    for (auto blockIdPair : commandExprVector) {
+      os << "(" << blockIdPair.first->getBasicBlockName() << ", " << blockIdPair.second->getID () << ");";
+    }
+    os << "]"<<std::endl;
   }
 };
 

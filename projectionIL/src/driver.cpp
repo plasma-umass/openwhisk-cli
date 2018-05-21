@@ -12,7 +12,7 @@
 
 typedef std::unordered_map <std::string, int> VersionMap;
 typedef std::unordered_map <BasicBlock*, std::unordered_map <std::string, int> > BasicBlockVersionMap;
-typedef std::unordered_map <std::string, std::vector<std::pair <BasicBlock*, std::string>>> PHINodePair;
+typedef std::unordered_map <std::string, std::vector<std::pair <BasicBlock*, Identifier*>>> PHINodePair;
 
 std::string gen_random_str(const int len)
 {
@@ -56,6 +56,16 @@ std::string identifierForVersion (std::string id, VersionMap& versionMap)
   return id + "_"+std::to_string (versionMap[id]);
 }
 
+static std::unordered_map <std::string, Identifier*> identifiers;
+Identifier* createNewIdentifier (std::string id)
+{
+  if (identifiers.find (id) == identifiers.end ()) {
+    identifiers[id] = new Identifier(id);
+  }
+  
+  return identifiers[id];
+}
+
 std::string updateVersionNumber (std::string id, VersionMap& versionMap, 
                                  VersionMap& bbVersionMap)
 {
@@ -70,7 +80,7 @@ std::string updateVersionNumber (std::string id, VersionMap& versionMap,
   return identifierForVersion (id, versionMap);
 }
 
-void allPredsDefiningID (BasicBlock* currBasicBlock, std::string id,
+void allPredsDefiningID (BasicBlock* currBasicBlock, Identifier* id,
                          BasicBlockVersionMap& bbVersionMap, 
                          PHINodePair& phiPair)
 {
@@ -81,8 +91,9 @@ void allPredsDefiningID (BasicBlock* currBasicBlock, std::string id,
   }
   
   for (auto pred : preds) {
-    if (bbVersionMap[pred].find (id) != bbVersionMap[pred].end ()) {
-      phiPair[id].push_back (std::make_pair (pred, id));
+    if (bbVersionMap[pred].find (id->getID()) != bbVersionMap[pred].end ()) {
+      std::string newID = identifierForVersion (id->getID(), bbVersionMap[pred]);
+      phiPair[id->getID ()].push_back (std::make_pair (pred, createNewIdentifier (newID)));
     } else {
       allPredsDefiningID (pred, id, bbVersionMap, phiPair);      
     }
@@ -91,14 +102,13 @@ void allPredsDefiningID (BasicBlock* currBasicBlock, std::string id,
 
 IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
                         VersionMap& idVersions, 
-                        BasicBlockVersionMap& bbVersionMap,
-                        PHINodePair& phiPair)
+                        BasicBlockVersionMap& bbVersionMap)
 {
   if (dynamic_cast <JSONIdentifier*> (astNode) != nullptr) {
     JSONIdentifier* jsonId;
     
     jsonId = dynamic_cast <JSONIdentifier*> (astNode);
-    return new Identifier (identifierForVersion (jsonId->getIdentifier (), idVersions));
+    return createNewIdentifier (identifierForVersion (jsonId->getIdentifier (), idVersions));
   } else if (dynamic_cast <ReturnJSON*> (astNode) != nullptr) {
     ReturnJSON* retJson;
     
@@ -110,25 +120,38 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     Identifier* newInput;
     std::string newInputID;
     std::string inputID;
-
+    PHINodePair phiPair;
+    
     callAction = dynamic_cast <CallAction*> (astNode);
     inputID = ((JSONIdentifier*)callAction->getArgument ())->getIdentifier ();
-    newInputID = identifierForVersion (inputID, idVersions);
-    newInput = new Identifier (newInputID);
+    newInputID = updateVersionNumber (inputID, idVersions, 
+                                      bbVersionMap[currBasicBlock]);
+    newInput = createNewIdentifier (newInputID);
     newOutputID = updateVersionNumber (callAction->getReturnValue()->getIdentifier (),
                                        idVersions, 
                                        bbVersionMap[currBasicBlock]);
-    allPredsDefiningID (currBasicBlock, inputID, bbVersionMap, phiPair);
-    return new Call (new Identifier (newOutputID), callAction->getActionName (),
+    allPredsDefiningID (currBasicBlock, createNewIdentifier(inputID), bbVersionMap, phiPair);
+    if (phiPair.size () > 0) {
+      for (auto iter : phiPair) {
+        currBasicBlock->appendInstruction (new PHI (newInput, iter.second));
+      }
+      //~ for (auto iter : phiPair) {
+        //~ std::cout << iter.first << std::endl;
+        //~ for (auto vecIter : iter.second) {
+          //~ std::cout << vecIter.first << " " << vecIter.second->getID () << std::endl;
+        //~ }
+      //~ }
+    }
+    return new Call (createNewIdentifier (newOutputID), callAction->getActionName (),
                      newInput);
                      //TODO: (Expression*)convertToSSAIR (callAction->getArgument ()));
   } else if (dynamic_cast <JSONTransformation*> (astNode) != nullptr) {
     JSONTransformation* trans;
     
     trans = dynamic_cast <JSONTransformation*> (astNode);
-    return new Transformation ((Identifier*) convertToSSAIR (trans->getOutput (), currBasicBlock, idVersions, bbVersionMap, phiPair),
-                                (Identifier*) convertToSSAIR (trans->getInput (), currBasicBlock, idVersions, bbVersionMap, phiPair),
-                                (Expression*) convertToSSAIR (trans->getTransformation (), currBasicBlock, idVersions, bbVersionMap, phiPair));
+    return new Transformation ((Identifier*) convertToSSAIR (trans->getOutput (), currBasicBlock, idVersions, bbVersionMap),
+                                (Identifier*) convertToSSAIR (trans->getInput (), currBasicBlock, idVersions, bbVersionMap),
+                                (Expression*) convertToSSAIR (trans->getTransformation (), currBasicBlock, idVersions, bbVersionMap));
   } else if (dynamic_cast <LetCommand*> (astNode) != nullptr) {
     abort ();
   } else if (dynamic_cast <NumberExpression*> (astNode) != nullptr) {
@@ -160,7 +183,16 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
   //simple commands.
   
   //First convert ComplexCommand to a set of Basic Blocks connected
-  //by branches.
+  //by branches. Also inserts Phi Branches. 
+  //Algorithm to insert Phi Branches:
+  //1. Every block stores what are the identifiers it has and their
+  // latest version number
+  //2. Get the Identifier for which to look for previous accesses.
+  //3. Go through all the previous basic blocks of current basic block.
+  //4. If a basic block along one path has that identifier then return its
+  //   latest version number.
+  //Above algorithm is naive and may lead to O(N^2) complexity. We 
+  //can use dominators based minimal SSA.
   
   BasicBlock* firstBasicBlock = new BasicBlock ();
   BasicBlock* currBasicBlock = firstBasicBlock;
@@ -185,7 +217,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
                                             bbVersionMap);
       cond = (Expression*) convertToSSAIR (ifThenElsecmd->getCondition (), 
                                            currBasicBlock, idVersions, 
-                                           bbVersionMap, phiPair);
+                                           bbVersionMap);
       condBr = new ConditionalBranch (cond, thenBasicBlock, 
                                       elseBasicBlock, currBasicBlock);
       currBasicBlock->appendInstruction (condBr);
@@ -198,17 +230,12 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       PHINodePair phiPair;
       Instruction* ssaInstr;
       
-      ssaInstr = (Instruction*)convertToSSAIR (cmd, currBasicBlock, idVersions, bbVersionMap, phiPair);
-      currBasicBlock->appendInstruction (ssaInstr);
+      ssaInstr = (Instruction*)convertToSSAIR (cmd, currBasicBlock, 
+                                               idVersions, bbVersionMap);
       
-      //~ if (phiPair.size () > 0) {
-        //~ for (auto iter : phiPair) {
-          //~ std::cout << iter.first << std::endl;
-          //~ for (auto vecIter : iter.second) {
-            //~ std::cout << vecIter.first << " " << vecIter.second << std::endl;
-          //~ }
-        //~ }
-      //~ }
+      
+      
+      currBasicBlock->appendInstruction (ssaInstr);
     }
   }
   
@@ -264,7 +291,7 @@ int main ()
     std::cout << std::endl;
   }
   //test2
-  
+  identifiers.clear ();
    {
     //X1 = A1 (input)
     //if X1 then X2 = A2(X1) else X2 = A3(X1)

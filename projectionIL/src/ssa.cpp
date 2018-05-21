@@ -6,8 +6,8 @@ std::unordered_map <std::string, std::vector <Identifier*> > Identifier::identif
 void Identifier::setCallStmt(Call* _callStmt) 
 {
   if (callStmt != nullptr) {
-    fprintf (stderr, "Identifier %s already assigned to action %s, cannot be assigned to action again\n",
-             identifier.c_str(), _callStmt->getActionName ().c_str());
+    fprintf (stderr, "Identifier '%s' already assigned to action '%s', cannot be assigned to action '%s'\n",
+             identifier.c_str(), callStmt->getActionName().c_str (), _callStmt->getActionName ().c_str());
     abort ();
   }
   
