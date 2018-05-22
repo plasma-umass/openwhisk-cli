@@ -326,7 +326,7 @@ int main ()
     firstBlock->convert (seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
-        std::cout << std::endl << std::endl;
+        std::cout << std::endl;
     }
     seqs[0]->print ();
     std::cout << std::endl;

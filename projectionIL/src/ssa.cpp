@@ -1,5 +1,7 @@
 #include "ssa.h"
 
+#include <unordered_map>
+
 int BasicBlock::numberOfBasicBlocks = 0;
 std::unordered_map <std::string, std::vector <Identifier*> > Identifier::identifiers;
 
