@@ -121,12 +121,19 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     std::string newInputID;
     std::string inputID;
     PHINodePair phiPair;
+    JSONIdentifier* input;
     
     callAction = dynamic_cast <CallAction*> (astNode);
-    inputID = ((JSONIdentifier*)callAction->getArgument ())->getIdentifier ();
-    newInputID = updateVersionNumber (inputID, idVersions, 
-                                      bbVersionMap[currBasicBlock]);
-    newInput = createNewIdentifier (newInputID);
+    input = ((JSONIdentifier*)callAction->getArgument ());
+    if (dynamic_cast <JSONInput*> (input) != nullptr) {
+      //There can only be one Input
+      newInput = new Input ();
+    } else {
+      inputID = input->getIdentifier ();
+      newInputID = identifierForVersion (inputID, idVersions);
+      newInput = createNewIdentifier (newInputID);
+    }
+    
     newOutputID = updateVersionNumber (callAction->getReturnValue()->getIdentifier (),
                                        idVersions, 
                                        bbVersionMap[currBasicBlock]);
@@ -232,9 +239,6 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       
       ssaInstr = (Instruction*)convertToSSAIR (cmd, currBasicBlock, 
                                                idVersions, bbVersionMap);
-      
-      
-      
       currBasicBlock->appendInstruction (ssaInstr);
     }
   }
@@ -283,11 +287,13 @@ int main ()
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
     //~ std::vector<WhiskSequence*> seqs = Converter::convert (&allCmds);
-    //~ for (auto seq : seqs) {
-        //~ seq->generateCommand (std::cout);
-        //~ std::cout << std::endl << std::endl;
-    //~ }
-    //~ seqs[0]->print ();
+    std::vector<WhiskSequence*> seqs;
+    firstBlock->convert (seqs);
+    for (auto seq : seqs) {
+        seq->generateCommand (std::cout);
+        std::cout << std::endl << std::endl;
+    }
+    seqs[0]->print ();
     std::cout << std::endl;
   }
   //test2
@@ -316,13 +322,13 @@ int main ()
     //firstBlock->print (std::cout);
     std::cout << std::endl;
     
-    //std::vector<WhiskSequence*> seqs = Converter::convert (&cmd1);
-    
-    //for (auto seq : seqs) {
-//        seq->generateCommand (std::cout);
-  //      std::cout << std::endl << std::endl;
-    //}
-    //seq->print ();
+    std::vector<WhiskSequence*> seqs;
+    firstBlock->convert (seqs);
+    for (auto seq : seqs) {
+        seq->generateCommand (std::cout);
+        std::cout << std::endl << std::endl;
+    }
+    seqs[0]->print ();
     std::cout << std::endl;
   }
   

@@ -46,7 +46,7 @@ public:
     identifiers [id].push_back (this);
   }
   
-  Identifier (std::string id) : identifier(id)
+  Identifier (std::string id) : identifier(id), callStmt(nullptr)
   {
     if (identifiers.find(id) == identifiers.end ())
       identifiers [id] = std::vector <Identifier*> ();
