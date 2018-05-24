@@ -57,6 +57,7 @@ const (
 	BLACKBOX          = "blackbox"
 	SEQUENCE          = "sequence"
         PROJECTION        = "projection"
+        PROGRAM           = "program"
         FORK              = "fork"
         APP               = "app"
 	FETCH_CODE        = true
@@ -432,6 +433,14 @@ func parseAction(cmd *cobra.Command, args []string, update bool) (*whisk.Action,
 		if len(args) == 2 {
 			action.Exec = new(whisk.Exec)
 			action.Exec.Kind = SEQUENCE
+			action.Exec.Components = csvToQualifiedActions(args[1])
+		} else {
+			return nil, noArtifactError()
+		}
+	} else if Flags.action.program {
+		if len(args) == 2 {
+			action.Exec = new(whisk.Exec)
+			action.Exec.Kind = PROGRAM
 			action.Exec.Components = csvToQualifiedActions(args[1])
 		} else {
 			return nil, noArtifactError()
@@ -1085,6 +1094,7 @@ func init() {
 	actionCreateCmd.Flags().StringVar(&Flags.action.docker, "docker", "", wski18n.T("use provided docker image (a path on DockerHub) to run the action"))
 	actionCreateCmd.Flags().BoolVar(&Flags.action.copy, "copy", false, wski18n.T("treat ACTION as the name of an existing action"))
 	actionCreateCmd.Flags().BoolVar(&Flags.action.sequence, "sequence", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
+        actionCreateCmd.Flags().BoolVar(&Flags.action.program, "program", false, wski18n.T("treat ACTION as comma separated basic blocks to invoke"))
         actionCreateCmd.Flags().BoolVar(&Flags.action.projection, "projection", false, wski18n.T("treat ACTION as a projection with action name and schema code "))
         actionCreateCmd.Flags().BoolVar(&Flags.action.fork, "fork", false, wski18n.T("treat ACTION as a fork with action name "))
         actionCreateCmd.Flags().BoolVar(&Flags.action.app, "app", false, wski18n.T("treat ACTION as a app with action name "))
@@ -1103,6 +1113,7 @@ func init() {
 	actionUpdateCmd.Flags().StringVar(&Flags.action.docker, "docker", "", wski18n.T("use provided docker image (a path on DockerHub) to run the action"))
 	actionUpdateCmd.Flags().BoolVar(&Flags.action.copy, "copy", false, wski18n.T("treat ACTION as the name of an existing action"))
 	actionUpdateCmd.Flags().BoolVar(&Flags.action.sequence, "sequence", false, wski18n.T("treat ACTION as comma separated sequence of actions to invoke"))
+        actionUpdateCmd.Flags().BoolVar(&Flags.action.program, "program", false, wski18n.T("treat ACTION as comma separated basic blocks to invoke"))
         actionUpdateCmd.Flags().BoolVar(&Flags.action.projection, "projection", false, wski18n.T("treat ACTION as a projection with action name and schema code "))
         actionUpdateCmd.Flags().BoolVar(&Flags.action.fork, "fork", false, wski18n.T("treat ACTION as a fork with action name and schema code "))
         actionUpdateCmd.Flags().BoolVar(&Flags.action.app, "app", false, wski18n.T("treat ACTION as a app with action name and schema code "))
