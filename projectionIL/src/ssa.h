@@ -81,10 +81,11 @@ protected:
   bool converted;
   WhiskSequence* seq;
   std::string basicBlockName;
-  static int numberOfBasicBlocks;
   std::vector <BasicBlock*> predecessors;
   
 public:
+  static int numberOfBasicBlocks;
+
   BasicBlock(std::vector<Instruction*> _cmds): Instruction (), 
                                                     cmds(_cmds)
   {
@@ -306,13 +307,17 @@ public:
   }
   
   ConditionalBranch (Expression* _expr, Instruction* _thenBranch, 
-                     Instruction* _elseBranch)
+                     Instruction* _elseBranch, BasicBlock* _parent)
   {
     expr = _expr;
+    parent = _parent;
     thenBranch = new BasicBlock ();
     thenBranch->appendInstruction (_thenBranch);
+    thenBranch->appendPredecessor (_parent);
     elseBranch = new BasicBlock ();
     elseBranch->appendInstruction (_elseBranch);
+    elseBranch->appendPredecessor (_parent);
+    
     seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   

@@ -444,6 +444,22 @@ public:
     cmds->appendSimpleCommand (_cmd);
   }
   
+  JSONExpression* getCondition ()
+  {
+    return cond;
+  }
+  
+  ComplexCommand* getBody ()
+  {
+    return cmds;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    abort ();
+  }
+  
+  virtual std::string getActionName () {return "WhileLoop";}
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     //While Loop is a sequence of four actions:

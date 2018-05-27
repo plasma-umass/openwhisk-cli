@@ -149,6 +149,8 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
         //~ }
       //~ }
     }
+    
+    std::cout << newOutputID << " " <<  callAction->getActionName () << " " << newInputID << std::endl;
     return new Call (createNewIdentifier (newOutputID), callAction->getActionName (),
                      newInput);
                      //TODO: (Expression*)convertToSSAIR (callAction->getArgument ()));
@@ -233,6 +235,29 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       elseBasicBlock->appendInstruction (new DirectBranch (target, elseBasicBlock));
       currBasicBlock = target;
       basicBlocks.push_back (target);
+    } else if (dynamic_cast <WhileLoop*> (cmd) != nullptr) {
+      WhileLoop* loop;
+      BasicBlock* testBB;
+      Expression* cond;
+      BasicBlock* loopBody;
+      BasicBlock* loopExit;
+      ConditionalBranch* condBr;
+      
+      loop = dynamic_cast <WhileLoop*> (cmd);
+      testBB = new BasicBlock ();
+      cond = (Expression*) convertToSSAIR (loop->getCondition (), 
+                                           testBB, idVersions, 
+                                           bbVersionMap);
+      basicBlocks.push_back (testBB);
+      currBasicBlock->appendInstruction (new DirectBranch (testBB, currBasicBlock));
+      loopBody = convertToBasicBlock (loop->getBody (), basicBlocks, 
+                                      idVersions, bbVersionMap);
+      loopExit = new BasicBlock ();
+      condBr = new ConditionalBranch (cond, loopBody, loopExit, testBB);
+      testBB->appendInstruction (condBr);
+      loopBody->appendInstruction (new DirectBranch (testBB, loopBody));
+      currBasicBlock = loopExit;
+      basicBlocks.push_back (loopExit);
     } else {
       PHINodePair phiPair;
       Instruction* ssaInstr;
@@ -328,6 +353,7 @@ int main ()
         seq->generateCommand (std::cout);
         std::cout << std::endl;
     }
+    
     seqs[0]->print ();
     std::cout << std::endl;
   }
@@ -368,29 +394,25 @@ int main ()
     //~ //seq->print ();
     //~ std::cout << std::endl;
   //~ }
-  
+  BasicBlock::numberOfBasicBlocks = 0;
+  identifiers.clear ();
   //test3
   {
-    //X1 = A1 (input)
-    //X1_ptr = store X1
-    //while (X1) {
-    //  X1 = load X1_ptr
-    //  X2 = A2 (X1)
-    //  store X4, X2_ptr
-    //  X1 = load X2_ptr
-    //}
+    //~ //X1 = A1 (input)
+    //~ //while (X1) {
+    //~ //  X1 = A2 (X1)
+    //~ //}
     
-    //X1 = A1 (input)
-    //X1_ptr = store (X1)
-    //
-    //if 
+    std::cout << "While Loop Test" << std::endl;
+    JSONIdentifier X1 ("X1");
+    JSONInput input;
     
-    //~ std::cout << "While Loop Test" << std::endl;
-    //~ JSONIdentifier X1 ("X1"), X2 ("X2"), X3("X3"), X4("X4");
-    //~ Pointer X2_ptr ("X2_ptr");
-    //~ Input input;
+    CallAction A1 (&X1, "A1", &input);
+    WhileLoop loop (&X1, new CallAction (&X1, "A2", &X1));
+    ComplexCommand cmd1;
+    cmd1.appendSimpleCommand (&A1);
+    cmd1.appendSimpleCommand (&loop);
     
-    //~ CallAction A1 (&X1, "A1", &input);
-    //~ CallAction A2 (&
+    BasicBlock* firstBlock = convertToSSA (&cmd1);
   }
 }
