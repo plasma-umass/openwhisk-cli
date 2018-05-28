@@ -19,7 +19,7 @@ void Identifier::setCallStmt(Call* _callStmt)
 std::string Identifier::convert ()
 {
   if (callStmt == nullptr) {
-    return ".saved.output_"+getID ();
+    return ".saved."+getID () + "_" + std::to_string(version);
   }
   
   /*if (callStmts.find(_callStmt) == callStmts.end()) {

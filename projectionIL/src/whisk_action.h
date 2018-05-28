@@ -70,11 +70,13 @@ public:
     }
     
     os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " << getName () << " --sequence ";
-    for (int i = 0; i < actions.size () - 1; i++) {
-      os << actions[i]->getNameForSeq () << ", ";
+    if (actions.size () > 0) {
+      for (int i = 0; i < actions.size () - 1; i++) {
+        os << actions[i]->getNameForSeq () << ", ";
+      }
+      
+      os << actions[actions.size () - 1]->getNameForSeq () << std::endl;
     }
-    
-    os << actions[actions.size () - 1]->getNameForSeq () << std::endl;
   }
 };
 

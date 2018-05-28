@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include <assert.h>
@@ -88,6 +89,9 @@ protected:
   std::string basicBlockName;
   std::vector <BasicBlock*> predecessors;
   std::vector <BasicBlock*> successors;
+  std::unordered_set <Identifier*> reads;
+  std::unordered_set <Identifier*> writes;
+  
 public:
   static int numberOfBasicBlocks;
 
@@ -107,6 +111,11 @@ public:
     basicBlockName = "#" + std::to_string (numberOfBasicBlocks);
     numberOfBasicBlocks++;
   }
+  
+  void insertRead (Identifier* v) {reads.insert(v);}
+  void insertWrite (Identifier* v) {writes.insert(v);}
+  std::unordered_set <Identifier*>& getReads () {return reads;}
+  std::unordered_set <Identifier*>& getWrites () {return writes;}
   
   void appendInstruction (Instruction* c)
   {
@@ -474,25 +483,37 @@ public:
   {
     return ".saved."+name;
   }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "*"<<name;
+  }
 };
 
 class LoadPointer : public Call
 {
-private:
-  Pointer* ptr;
-
 public:
-  LoadPointer (Identifier* _retVal, Pointer* _ptr) : Call (_retVal, "Load_ptr", _ptr)
+  LoadPointer (Identifier* _retVal, Pointer* _ptr) : Call (_retVal, "Load", _ptr)
   {}
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
+     std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
      return new WhiskProjection (projName,
-                                 ". * {\"saved\":{\""+retVal->convert () + "\":"+ptr->convert () + "}}");
+                                 ". * {\"saved\":{\""+retValID+ "\":"+arg->convert () + "}}");
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    retVal->print (os);
+    os << " = Load ";
+    arg->print (os);
+    os << std::endl;
   }
   
   virtual std::string getForkName() 
   {
+    return retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
     fprintf(stderr, "LoadPointer::getForkName() should not be called\n");
     abort ();
   }
@@ -515,10 +536,21 @@ public:
   {
     std::string code;
     
-    code = ". * { \"saved\" : {\" " + ptr->getName () + "\":" + expr->convert () + "}";
+    code = ". * { \"saved\" : {\" " + ptr->getName () + "\":" + expr->convert () + "}}";
     
     return new WhiskProjection (projName, code);
   }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "Store (";
+    expr->print (os);
+    os << ", ";
+    ptr->print (os);
+    os << ");" << std::endl;
+  }
+  
+  virtual std::string getActionName () {return "Store_ptr";}
 };
 
 class DirectBranch : public Instruction 
