@@ -682,6 +682,43 @@ int main ()
     }
   }
   
+  BasicBlock::numberOfBasicBlocks = 0;
+  identifiers.clear ();
+  //test4
+  {
+    //~ //X1 = A1 (input)
+    //~ //while (X1) {
+    //~ //  while (X1) {
+    //~ //    X1 = A2 (X1)
+    //~ //  }
+    //~ //}
+    
+    std::cout << "2 Nested While Loops Test" << std::endl;
+    JSONIdentifier X1 ("X1"), X2("X2");
+    JSONInput input;
+    
+    CallAction A1 (&X1, "A1", &input);
+    WhileLoop loop2 (&X1, new CallAction (&X1, "A2", &X1));
+    WhileLoop loop (&X1, &loop2);
+    loop.getBody()->appendSimpleCommand (new CallAction (&X2, "A3", &X1));
+    loop.getBody()->appendSimpleCommand (new WhileLoop (&X2, new CallAction (&X2, "A4", &X1)));
+    ComplexCommand cmd1;
+    cmd1.appendSimpleCommand (&A1);
+    cmd1.appendSimpleCommand (&loop);
+    
+    BasicBlock* firstBlock = convertToSSA (&cmd1);
+    std::vector<WhiskSequence*> seqs;
+    firstBlock->convert (seqs);
+    for (auto seq : seqs) {
+        seq->generateCommand (std::cout);
+        std::cout << std::endl;
+    }
+    for (auto seq : seqs) {
+      seq->print ();
+      std::cout << std::endl;
+    }
+  }
+  
   //While Inside If
   //If Inside while
   //If inside if
