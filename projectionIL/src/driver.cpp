@@ -353,10 +353,18 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
   abort ();
 }
 
+//~ void insertStoresInPredsForLoads (BasicBlock* basicBlock)
+//~ {
+  //~ for (auto pred : basicBlock->getPredecessors ()) {
+    //~ for (auto 
+  //~ }
+//~ }
+
 BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd, 
                                  std::vector<BasicBlock*>& basicBlocks, 
                                  VersionMap& idVersions,
-                                 BasicBlockVersionMap& bbVersionMap)
+                                 BasicBlockVersionMap& bbVersionMap,
+                                 BasicBlock** exitBlock)
 {
   //This function takes one ComplexCommand containing all other
   //simple commands.
@@ -390,10 +398,10 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       ifThenElsecmd = dynamic_cast <IfThenElseCommand*> (cmd);
       thenBasicBlock = convertToBasicBlock (ifThenElsecmd->getThenBranch (), 
                                             basicBlocks, idVersions, 
-                                            bbVersionMap);
+                                            bbVersionMap, nullptr);
       elseBasicBlock = convertToBasicBlock (ifThenElsecmd->getElseBranch (), 
                                             basicBlocks, idVersions, 
-                                            bbVersionMap);
+                                            bbVersionMap, nullptr);
       cond = (Expression*) convertToSSAIR (ifThenElsecmd->getCondition (), 
                                            currBasicBlock, idVersions, 
                                            bbVersionMap);
@@ -404,6 +412,8 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       thenBasicBlock->appendInstruction (new DirectBranch (target, thenBasicBlock));
       elseBasicBlock->appendInstruction (new DirectBranch (target, elseBasicBlock));
       currBasicBlock = target;
+      if (exitBlock != nullptr)
+        *exitBlock = target;
       basicBlocks.push_back (target);
       
     } else if (dynamic_cast <WhileLoop*> (cmd) != nullptr) {
@@ -413,26 +423,43 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       BasicBlock* loopBody;
       BasicBlock* loopExit;
       ConditionalBranch* condBr;
+      BasicBlock* innerExitBlock;
       
+      innerExitBlock = nullptr;
       loop = dynamic_cast <WhileLoop*> (cmd);
       testBB = new BasicBlock ();
       basicBlocks.push_back (testBB);
       loopBody = convertToBasicBlock (loop->getBody (), basicBlocks, 
-                                      idVersions, bbVersionMap);
+                                      idVersions, bbVersionMap, &innerExitBlock);
       
+      //TODO: Make sure that for every load there is a store from every path coming
+      //to this block
       for (auto iter : loopBody->getReads ()) {
-        loopBody->prependInstruction (new LoadPointer (iter, new Pointer (iter->getID ())));
+        LoadPointer* ld;
+        
+        ld = new LoadPointer (iter.first, new Pointer (iter.first->getID ()));
+        loopBody->insertRead (iter.first, ld);
+        loopBody->prependInstruction (ld);
       }
       
       for (auto iter : loopBody->getWrites ()) {
-        loopBody->appendInstruction (new StorePointer (iter, new Pointer (iter->getID ())));
+        StorePointer* str;
+        
+        str = new StorePointer (iter.first, new Pointer (iter.first->getID ()));
+        loopBody->insertWrite (iter.first, str);
+        loopBody->appendInstruction (str);
       }
       
       loopExit = new BasicBlock ();
+      if (exitBlock != nullptr)
+        *exitBlock = loopExit;
       basicBlocks.push_back (loopExit);
       
       //testBB will have loopBody as one its predecessors
-      loopBody->appendInstruction (new BackwardBranch (testBB, loopBody)); 
+      if (innerExitBlock != nullptr)
+        innerExitBlock->appendInstruction (new BackwardBranch (testBB, innerExitBlock)); 
+      else
+        loopBody->appendInstruction (new BackwardBranch (testBB, loopBody)); 
       //testBB will have currBasicBlock as one of its predecessors
       currBasicBlock->appendInstruction (new DirectBranch (testBB, 
                                                            currBasicBlock));
@@ -440,7 +467,11 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
                                            testBB, idVersions,
                                            bbVersionMap);
       for (auto iter : testBB->getReads ()) {
-        testBB->prependInstruction (new LoadPointer (iter, new Pointer (iter->getID())));
+        LoadPointer* ptr;
+        
+        ptr = new LoadPointer (iter.first, new Pointer (iter.first->getID()));
+        testBB->insertRead (iter.first, ptr);
+        testBB->prependInstruction (ptr);
       }
       
       assert (testBB->getWrites ().size () == 0);
@@ -468,7 +499,7 @@ BasicBlock* convertToSSA (ComplexCommand* cmd)
   std::vector<BasicBlock*> basicBlocks;
   
   firstBasicBlock = convertToBasicBlock (cmd, basicBlocks, idVersions, 
-                                         bbVersionMap);
+                                         bbVersionMap, nullptr);
   updateVersionNumberInBB (firstBasicBlock, idVersions, bbVersionMap);
   
   for (auto bb : basicBlocks) {
@@ -614,4 +645,44 @@ int main ()
       std::cout << std::endl;
     }
   }
+  
+  BasicBlock::numberOfBasicBlocks = 0;
+  identifiers.clear ();
+  //test3
+  {
+    //~ //X1 = A1 (input)
+    //~ //while (X1) {
+    //~ //  while (X1) {
+    //~ //    X1 = A2 (X1)
+    //~ //  }
+    //~ //}
+    
+    std::cout << "Nested While Loop Test" << std::endl;
+    JSONIdentifier X1 ("X1"), X2("X2");
+    JSONInput input;
+    
+    CallAction A1 (&X1, "A1", &input);
+    WhileLoop loop2 (&X1, new CallAction (&X1, "A2", &X1));
+    WhileLoop loop (&X1, &loop2);
+    loop.getBody()->appendSimpleCommand (new CallAction (&X2, "A3", &X1));
+    ComplexCommand cmd1;
+    cmd1.appendSimpleCommand (&A1);
+    cmd1.appendSimpleCommand (&loop);
+    
+    BasicBlock* firstBlock = convertToSSA (&cmd1);
+    std::vector<WhiskSequence*> seqs;
+    firstBlock->convert (seqs);
+    for (auto seq : seqs) {
+        seq->generateCommand (std::cout);
+        std::cout << std::endl;
+    }
+    for (auto seq : seqs) {
+      seq->print ();
+      std::cout << std::endl;
+    }
+  }
+  
+  //While Inside If
+  //If Inside while
+  //If inside if
 }

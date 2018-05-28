@@ -15,6 +15,8 @@
 typedef std::string ActionName;
 
 class Call;
+class LoadPointer;
+class StorePointer;
 
 class IRNode
 {
@@ -79,6 +81,139 @@ public:
   virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
 };
 
+class Call : public Instruction
+{
+protected:
+  Identifier* retVal;
+  ActionName actionName;
+  Expression* arg;
+  std::string forkName;
+  std::string projName;
+  
+public:
+  Call (Identifier* _retVal, ActionName _actionName, Expression* _arg) : 
+    Instruction(), retVal(_retVal), actionName (_actionName), arg(_arg) 
+  {
+    retVal->setCallStmt(this);
+    forkName = "Fork_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+    projName = "Proj_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+  }
+  
+  Identifier* getReturnValue() {return retVal;}
+  virtual std::string getActionName() {return actionName;}
+  Expression* getArgument() {return arg;}
+  void setReturnValue (Identifier* ret) {retVal = ret;}
+  void setArgument (Expression* _arg) {arg = _arg;}
+  
+  virtual std::string getForkName() 
+  {
+    return forkName;
+  }
+  
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+    return new WhiskProjForkPair (new WhiskProjection (projName, arg->convert ()),
+                                  new WhiskFork (getForkName (), getActionName ()));
+  }
+  
+  std::string getProjName ()
+  {
+    return projName;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    retVal->print (os);
+    os << " = " << actionName << "(";
+    arg->print (os);
+    os << ");" << std::endl;
+  }
+};
+
+class Pointer : public Expression
+{
+private:
+  std::string name;
+
+public:
+  Pointer (std::string _name) : name(_name) {}
+  
+  std::string getName () {return name;}
+  
+  virtual std::string convert () 
+  {
+    return ".saved."+name;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "*"<<name;
+  }
+};
+
+class LoadPointer : public Call
+{
+public:
+  LoadPointer (Identifier* _retVal, Pointer* _ptr) : Call (_retVal, "Load", _ptr)
+  {}
+  
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+     std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
+     return new WhiskProjection (projName,
+                                 ". * {\"saved\":{\""+retValID+ "\":"+arg->convert () + "}}");
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    retVal->print (os);
+    os << " = Load ";
+    arg->print (os);
+    os << std::endl;
+  }
+  
+  virtual std::string getForkName() 
+  {
+    return retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
+    fprintf(stderr, "LoadPointer::getForkName() should not be called\n");
+    abort ();
+  }
+};
+
+class StorePointer : public Instruction
+{
+private:
+  Expression* expr;
+  Pointer* ptr;
+  std::string projName;
+  
+public:
+  StorePointer (Expression* _expr, Pointer* _ptr) : expr(_expr), ptr(_ptr) 
+  {
+    projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
+  }
+  
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+    std::string code;
+    
+    code = ". * { \"saved\" : {\" " + ptr->getName () + "\":" + expr->convert () + "}}";
+    
+    return new WhiskProjection (projName, code);
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "Store (";
+    expr->print (os);
+    os << ", ";
+    ptr->print (os);
+    os << ");" << std::endl;
+  }
+  
+  virtual std::string getActionName () {return "Store_ptr";}
+};
+
 class BasicBlock : public Instruction
 {
 protected:
@@ -89,8 +224,8 @@ protected:
   std::string basicBlockName;
   std::vector <BasicBlock*> predecessors;
   std::vector <BasicBlock*> successors;
-  std::unordered_set <Identifier*> reads;
-  std::unordered_set <Identifier*> writes;
+  std::unordered_map <Identifier*, LoadPointer*> reads;
+  std::unordered_map <Identifier*, StorePointer*> writes;
   
 public:
   static int numberOfBasicBlocks;
@@ -112,10 +247,12 @@ public:
     numberOfBasicBlocks++;
   }
   
-  void insertRead (Identifier* v) {reads.insert(v);}
-  void insertWrite (Identifier* v) {writes.insert(v);}
-  std::unordered_set <Identifier*>& getReads () {return reads;}
-  std::unordered_set <Identifier*>& getWrites () {return writes;}
+  void insertRead (Identifier* v, LoadPointer* ptr) {reads[v] = ptr;}
+  void insertWrite (Identifier* v, StorePointer* ptr) {writes[v] = ptr;}
+  void insertRead (Identifier* v) {reads[v] = nullptr;}
+  void insertWrite (Identifier* v) {writes[v] = nullptr;}
+  std::unordered_map <Identifier*, LoadPointer*> getReads () {return reads;}
+  std::unordered_map <Identifier*, StorePointer*> getWrites () {return writes;}
   
   void appendInstruction (Instruction* c)
   {
@@ -195,55 +332,6 @@ public:
   {
     return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
                                 getReturnExpr ()->convert ());
-  }
-};
-
-class Call : public Instruction
-{
-protected:
-  Identifier* retVal;
-  ActionName actionName;
-  Expression* arg;
-  std::string forkName;
-  std::string projName;
-  
-public:
-  Call (Identifier* _retVal, ActionName _actionName, Expression* _arg) : 
-    Instruction(), retVal(_retVal), actionName (_actionName), arg(_arg) 
-  {
-    retVal->setCallStmt(this);
-    forkName = "Fork_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-    projName = "Proj_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-  }
-  
-  Identifier* getReturnValue() {return retVal;}
-  virtual std::string getActionName() {return actionName;}
-  Expression* getArgument() {return arg;}
-  void setReturnValue (Identifier* ret) {retVal = ret;}
-  void setArgument (Expression* _arg) {arg = _arg;}
-  
-  virtual std::string getForkName() 
-  {
-    return forkName;
-  }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    return new WhiskProjForkPair (new WhiskProjection (projName, arg->convert ()),
-                                  new WhiskFork (getForkName (), getActionName ()));
-  }
-  
-  std::string getProjName ()
-  {
-    return projName;
-  }
-  
-  virtual void print (std::ostream& os)
-  {
-    retVal->print (os);
-    os << " = " << actionName << "(";
-    arg->print (os);
-    os << ");" << std::endl;
   }
 };
 
@@ -467,90 +555,6 @@ public:
     }
     os << "]"<<std::endl;
   }
-};
-
-class Pointer : public Expression
-{
-private:
-  std::string name;
-
-public:
-  Pointer (std::string _name) : name(_name) {}
-  
-  std::string getName () {return name;}
-  
-  virtual std::string convert () 
-  {
-    return ".saved."+name;
-  }
-  
-  virtual void print (std::ostream& os)
-  {
-    os << "*"<<name;
-  }
-};
-
-class LoadPointer : public Call
-{
-public:
-  LoadPointer (Identifier* _retVal, Pointer* _ptr) : Call (_retVal, "Load", _ptr)
-  {}
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-     std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
-     return new WhiskProjection (projName,
-                                 ". * {\"saved\":{\""+retValID+ "\":"+arg->convert () + "}}");
-  }
-  
-  virtual void print (std::ostream& os)
-  {
-    retVal->print (os);
-    os << " = Load ";
-    arg->print (os);
-    os << std::endl;
-  }
-  
-  virtual std::string getForkName() 
-  {
-    return retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
-    fprintf(stderr, "LoadPointer::getForkName() should not be called\n");
-    abort ();
-  }
-};
-
-class StorePointer : public Instruction
-{
-private:
-  Expression* expr;
-  Pointer* ptr;
-  std::string projName;
-  
-public:
-  StorePointer (Expression* _expr, Pointer* _ptr) : expr(_expr), ptr(_ptr) 
-  {
-    projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
-  }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    std::string code;
-    
-    code = ". * { \"saved\" : {\" " + ptr->getName () + "\":" + expr->convert () + "}}";
-    
-    return new WhiskProjection (projName, code);
-  }
-  
-  virtual void print (std::ostream& os)
-  {
-    os << "Store (";
-    expr->print (os);
-    os << ", ";
-    ptr->print (os);
-    os << ");" << std::endl;
-  }
-  
-  virtual std::string getActionName () {return "Store_ptr";}
 };
 
 class DirectBranch : public Instruction 
