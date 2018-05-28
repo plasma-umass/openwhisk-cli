@@ -36,30 +36,35 @@ private:
   std::string identifier;
   Call* callStmt;
   static std::unordered_map <std::string, std::vector <Identifier*> > identifiers;
+  int version;
   
 public:
-  Identifier (std::string id, Call* _callStmt) : 
-    identifier(id), callStmt (_callStmt)
+  Identifier (std::string id, int _version, Call* _callStmt) : 
+    identifier(id), version (_version), callStmt (_callStmt)
   {
     if (identifiers.find(id) == identifiers.end ())
       identifiers [id] = std::vector <Identifier*> ();
     identifiers [id].push_back (this);
   }
   
-  Identifier (std::string id) : identifier(id), callStmt(nullptr)
+  Identifier (std::string id, int _version) : identifier(id), 
+                                  version (_version), callStmt(nullptr)
   {
     if (identifiers.find(id) == identifiers.end ())
       identifiers [id] = std::vector <Identifier*> ();
     identifiers [id].push_back (this);
   }
+  Identifier (std::string id) : Identifier(id, -1) {}
   
+  void setVersion (int _version) {version = _version;}
+  int getVersion () {return version;}
   void setCallStmt(Call* _callStmt);
   virtual std::string convert ();
   std::string getID () const {return identifier;}
   
   virtual void print (std::ostream& os)
   {
-    os << identifier;
+    os << identifier+"_"+std::to_string(version);
   }
 };
 
@@ -82,7 +87,7 @@ protected:
   WhiskSequence* seq;
   std::string basicBlockName;
   std::vector <BasicBlock*> predecessors;
-  
+  std::vector <BasicBlock*> successors;
 public:
   static int numberOfBasicBlocks;
 
@@ -108,13 +113,23 @@ public:
     cmds.push_back(c);
   }
   
+  void prependInstruction (Instruction* c)
+  {
+    cmds.insert(cmds.begin(), c);
+  }
+  
   void appendPredecessor (BasicBlock* bb)
   {
     predecessors.push_back (bb);
   }
   
-  std::vector <BasicBlock*>& getPredecessors () {return predecessors;}
+  void appendSuccessor (BasicBlock* bb)
+  {
+    successors.push_back (bb);
+  }
   
+  std::vector <BasicBlock*>& getPredecessors () {return predecessors;}
+  std::vector <BasicBlock*>& getSuccessors () {return successors;}
   const std::vector<Instruction*>& getInstructions() {return cmds;}
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
@@ -192,9 +207,9 @@ public:
     projName = "Proj_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
   }
   
-  const Identifier* getReturnValue() {return retVal;}
+  Identifier* getReturnValue() {return retVal;}
   virtual std::string getActionName() {return actionName;}
-  const Expression* getArgument() {return arg;}
+  Expression* getArgument() {return arg;}
   void setReturnValue (Identifier* ret) {retVal = ret;}
   void setArgument (Expression* _arg) {arg = _arg;}
   
@@ -303,6 +318,8 @@ public:
     parent = _parent;
     thenBranch->appendPredecessor (parent);
     elseBranch->appendPredecessor (parent);
+    parent->appendSuccessor (thenBranch);
+    parent->appendSuccessor (elseBranch);
     seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
@@ -317,7 +334,8 @@ public:
     elseBranch = new BasicBlock ();
     elseBranch->appendInstruction (_elseBranch);
     elseBranch->appendPredecessor (_parent);
-    
+    parent->appendSuccessor (thenBranch);
+    parent->appendSuccessor (elseBranch);
     seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
@@ -434,7 +452,9 @@ public:
     os << "[";
     
     for (auto blockIdPair : commandExprVector) {
-      os << "(" << blockIdPair.first->getBasicBlockName() << ", " << blockIdPair.second->getID () << ");";
+      os << "(" << blockIdPair.first->getBasicBlockName() << ", ";
+      blockIdPair.second->print (os);
+      os << ");";
     }
     os << "]"<<std::endl;
   }
@@ -503,7 +523,7 @@ public:
 
 class DirectBranch : public Instruction 
 {
-private:
+protected:
   BasicBlock* target;
   BasicBlock* parent;
   
@@ -511,6 +531,7 @@ public:
   DirectBranch (BasicBlock* _target, BasicBlock *_parent) : target(_target), parent(_parent)
   {
     target->appendPredecessor (parent);
+    parent->appendSuccessor (target);
   }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
@@ -525,9 +546,23 @@ public:
     abort ();
   }
   
+  BasicBlock* getTarget () {return target;}
+  
   virtual void print (std::ostream& os) 
   {
     os << "goto " << target->getBasicBlockName () << std::endl;
+    //target->print (os);
+  }
+};
+
+class BackwardBranch : public DirectBranch
+{
+public:
+  BackwardBranch (BasicBlock* _target, BasicBlock *_parent) : DirectBranch (_target, _parent) {}
+  
+  virtual void print (std::ostream& os) 
+  {
+    os << "loop " << target->getBasicBlockName () << std::endl;
     //target->print (os);
   }
 };
@@ -657,7 +692,7 @@ public:
 class Input : public Identifier 
 {
 public:
-  Input () : Identifier ("input") {}
+  Input () : Identifier ("input", 0) {}
   std::string convert ()
   {    
     return ".saved.input";

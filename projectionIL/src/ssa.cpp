@@ -19,9 +19,7 @@ void Identifier::setCallStmt(Call* _callStmt)
 std::string Identifier::convert ()
 {
   if (callStmt == nullptr) {
-    fprintf (stderr, "Cannot transform identifier '%s' as no action is assigned to it\n", 
-             identifier.c_str());
-    abort ();
+    return ".saved.output_"+getID ();
   }
   
   /*if (callStmts.find(_callStmt) == callStmts.end()) {

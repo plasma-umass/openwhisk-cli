@@ -7,12 +7,13 @@
 #include <typeinfo>
 #include <set>
 #include <utility>
+#include <queue>
 
 #define MAX_SEQ_NAME_SIZE 10
 
 typedef std::unordered_map <std::string, int> VersionMap;
 typedef std::unordered_map <BasicBlock*, std::unordered_map <std::string, int> > BasicBlockVersionMap;
-typedef std::unordered_map <std::string, std::vector<std::pair <BasicBlock*, Identifier*>>> PHINodePair;
+typedef std::unordered_map <Identifier*, std::vector<std::pair <BasicBlock*, Identifier*>>> PHINodePair;
 
 std::string gen_random_str(const int len)
 {
@@ -47,27 +48,37 @@ std::vector<WhiskSequence*> Converter::convert (Command* cmd)
   return toRet;
 }
 
-std::string identifierForVersion (std::string id, VersionMap& versionMap)
+static std::unordered_map <std::string, Identifier*> identifiers; // <id>_<version> to Identifier*
+Identifier* createNewIdentifier (std::string id, int version)
+{
+  std::string to_search = id+"_"+std::to_string(version);
+  if (identifiers.find (to_search) == identifiers.end ()) {
+    identifiers[to_search] = new Identifier(id, version);
+  }
+  
+  return identifiers[to_search];
+}
+
+int latestVersion (std::string id, VersionMap& versionMap)
 {
   if (versionMap.find (id) == versionMap.end ()) {
     versionMap [id] = 0;
   }
   
-  return id + "_"+std::to_string (versionMap[id]);
+  return versionMap[id];
 }
 
-static std::unordered_map <std::string, Identifier*> identifiers;
-Identifier* createNewIdentifier (std::string id)
+Identifier* identifierForVersion (std::string id, VersionMap& versionMap)
 {
-  if (identifiers.find (id) == identifiers.end ()) {
-    identifiers[id] = new Identifier(id);
+  if (versionMap.find (id) == versionMap.end ()) {
+    versionMap [id] = 0;
   }
   
-  return identifiers[id];
+  return createNewIdentifier (id, versionMap[id]);
 }
 
-std::string updateVersionNumber (std::string id, VersionMap& versionMap, 
-                                 VersionMap& bbVersionMap)
+int updateVersionNumber (std::string id, VersionMap& versionMap, 
+                         VersionMap& bbVersionMap)
 {
   if (versionMap.find (id) == versionMap.end ()) {
     versionMap [id] = 0;
@@ -77,7 +88,7 @@ std::string updateVersionNumber (std::string id, VersionMap& versionMap,
   
   bbVersionMap[id] = versionMap[id];
   
-  return identifierForVersion (id, versionMap);
+  return versionMap[id];
 }
 
 void allPredsDefiningID (BasicBlock* currBasicBlock, Identifier* id,
@@ -85,15 +96,15 @@ void allPredsDefiningID (BasicBlock* currBasicBlock, Identifier* id,
                          PHINodePair& phiPair)
 {
   auto preds = currBasicBlock->getPredecessors();
-  
+  std::cout << "preds.size () " << currBasicBlock->getBasicBlockName () <<  " " <<  preds.size () << std::endl;
   if (preds.size () < 2) {
     return;
   }
   
   for (auto pred : preds) {
     if (bbVersionMap[pred].find (id->getID()) != bbVersionMap[pred].end ()) {
-      std::string newID = identifierForVersion (id->getID(), bbVersionMap[pred]);
-      phiPair[id->getID ()].push_back (std::make_pair (pred, createNewIdentifier (newID)));
+      Identifier* newID = identifierForVersion (id->getID(), bbVersionMap[pred]);
+      phiPair[id].push_back (std::make_pair (pred, newID));
     } else {
       allPredsDefiningID (pred, id, bbVersionMap, phiPair);      
     }
@@ -108,7 +119,34 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     JSONIdentifier* jsonId;
     
     jsonId = dynamic_cast <JSONIdentifier*> (astNode);
-    return createNewIdentifier (identifierForVersion (jsonId->getIdentifier (), idVersions));
+    if (true or idVersions.count (jsonId->getIdentifier ()) == 0) {
+      //return createNewIdentifier (identifierForVersion (jsonId->getIdentifier (), idVersions));
+      return new Identifier (jsonId->getIdentifier (), -1);
+    } else {
+      //~ PHINodePair phiPair;
+      //~ std::string id = jsonId->getIdentifier ();
+      //~ allPredsDefiningID (currBasicBlock, createNewIdentifier(id), bbVersionMap, phiPair);
+      //~ if (phiPair.size () > 0) {
+        //~ id = updateVersionNumber (id, idVersions, bbVersionMap[currBasicBlock]);
+        //~ Identifier* newId = createNewIdentifier (id);
+        //~ std::cout << "newInputID " << newId << std::endl;
+        //~ for (auto iter : phiPair) {
+          //~ std::cout << "iter.first = " << iter.first << std::endl;
+          //~ currBasicBlock->appendInstruction (new PHI (newId, iter.second));
+        //~ }
+        
+        //~ return newId;
+        //~ for (auto iter : phiPair) {
+          //~ std::cout << iter.first << std::endl;
+          //~ for (auto vecIter : iter.second) {
+            //~ std::cout << vecIter.first << " " << vecIter.second->getID () << std::endl;
+          //~ }
+        //~ }
+      //~ } else {
+        //~ return createNewIdentifier (identifierForVersion (jsonId->getIdentifier (), idVersions));
+      //~ }
+    }
+    
   } else if (dynamic_cast <ReturnJSON*> (astNode) != nullptr) {
     ReturnJSON* retJson;
     
@@ -117,6 +155,7 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
   } else if (dynamic_cast <CallAction*> (astNode) != nullptr) {
     CallAction* callAction;
     std::string newOutputID;
+    Identifier* newOutput;
     Identifier* newInput;
     std::string newInputID;
     std::string inputID;
@@ -125,33 +164,44 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     
     callAction = dynamic_cast <CallAction*> (astNode);
     input = ((JSONIdentifier*)callAction->getArgument ());
+
     if (dynamic_cast <JSONInput*> (input) != nullptr) {
       //There can only be one Input
       newInput = new Input ();
     } else {
       inputID = input->getIdentifier ();
-      newInputID = identifierForVersion (inputID, idVersions);
-      newInput = createNewIdentifier (newInputID);
-    }
     
-    newOutputID = updateVersionNumber (callAction->getReturnValue()->getIdentifier (),
-                                       idVersions, 
-                                       bbVersionMap[currBasicBlock]);
-    allPredsDefiningID (currBasicBlock, createNewIdentifier(inputID), bbVersionMap, phiPair);
-    if (phiPair.size () > 0) {
-      for (auto iter : phiPair) {
-        currBasicBlock->appendInstruction (new PHI (newInput, iter.second));
-      }
-      //~ for (auto iter : phiPair) {
-        //~ std::cout << iter.first << std::endl;
-        //~ for (auto vecIter : iter.second) {
-          //~ std::cout << vecIter.first << " " << vecIter.second->getID () << std::endl;
+      std::cout << "inputID " << inputID << std::endl;
+      //~ allPredsDefiningID (currBasicBlock, createNewIdentifier(inputID), bbVersionMap, phiPair);
+      if (false and phiPair.size () > 0) {
+        //~ newInputID = updateVersionNumber (inputID, idVersions, bbVersionMap[currBasicBlock]);
+        //~ newInput = createNewIdentifier (newInputID);
+        //~ std::cout << "newInputID " << newInputID << std::endl;
+        //~ for (auto iter : phiPair) {
+          //~ std::cout << "iter.first = " << iter.first << std::endl;
+          //~ currBasicBlock->appendInstruction (new PHI (newInput, iter.second));
         //~ }
-      //~ }
+        
+        //~ for (auto iter : phiPair) {
+          //~ std::cout << iter.first << std::endl;
+          //~ for (auto vecIter : iter.second) {
+            //~ std::cout << vecIter.first << " " << vecIter.second->getID () << std::endl;
+          //~ }
+        //~ }
+      } else {
+        //newInputID = identifierForVersion (inputID, idVersions);
+        newInput = new Identifier (inputID);
+      }
     }
     
-    std::cout << newOutputID << " " <<  callAction->getActionName () << " " << newInputID << std::endl;
-    return new Call (createNewIdentifier (newOutputID), callAction->getActionName (),
+    newOutput = new Identifier (callAction->getReturnValue()->getIdentifier ());
+    //bbVersionMap[currBasicBlock][newOutput->getID ()] = newOutput->getVersion ();
+    //~ updateVersionNumber (,
+                                       //~ idVersions, 
+                                       //~ bbVersionMap[currBasicBlock]);
+    
+    //std::cout << newOutputID << " " <<  callAction->getActionName () << " " << newInputID << std::endl;
+    return new Call (newOutput, callAction->getActionName (),
                      newInput);
                      //TODO: (Expression*)convertToSSAIR (callAction->getArgument ()));
   } else if (dynamic_cast <JSONTransformation*> (astNode) != nullptr) {
@@ -181,6 +231,105 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
   }
   
   abort ();
+}
+
+void updateVersionNumberInSSA (IRNode* irNode, BasicBlock* basicBlock, 
+                               VersionMap& idVersions, 
+                               BasicBlockVersionMap& bbVersionMap,
+                               PHINodePair& phiNodePair)
+{
+  if (dynamic_cast <Identifier*> (irNode) != nullptr) {
+    Identifier* id;
+    PHINodePair phiNodePairForID;
+    id = dynamic_cast <Identifier*> (irNode);
+    allPredsDefiningID (basicBlock, id, bbVersionMap, phiNodePairForID);
+    
+    if (phiNodePairForID.size () > 0) {
+      for (auto iter : phiNodePairForID) {
+        std::cout << "AAAA" << std::endl;
+        iter.first->print (std::cout);
+        updateVersionNumber (iter.first->getID (), idVersions, bbVersionMap[basicBlock]);
+        phiNodePair[iter.first] = iter.second; 
+      }
+    }
+    
+    id->setVersion (latestVersion (id->getID (), idVersions));
+  }
+}
+
+void updateVersionNumberInBB (BasicBlock* basicBlock, 
+                              VersionMap& idVersions, 
+                              BasicBlockVersionMap& bbVersionMap)
+{
+  std::queue <BasicBlock*> basicBlockQueue;
+  std::unordered_set <BasicBlock*> visited;
+  
+  basicBlockQueue.push (basicBlock);
+  while (basicBlockQueue.empty () == false) {
+    std::vector<Instruction*> instsToPrepend;
+    basicBlock = basicBlockQueue.front ();
+    basicBlockQueue.pop ();
+    
+    if (visited.count (basicBlock) == 1) {
+      continue;
+    }
+    
+    visited.insert (basicBlock);
+    for (auto instr : basicBlock->getInstructions ()) {
+      PHINodePair phiNodePair;
+      if (dynamic_cast <Call*> (instr) != nullptr) {
+        Call* call;
+        Identifier* arg;
+        Identifier* retVal;
+        
+        call = dynamic_cast <Call*> (instr);
+        arg = dynamic_cast<Identifier*> (call->getArgument ());
+        retVal = call->getReturnValue ();
+        updateVersionNumberInSSA (call->getArgument (), basicBlock, 
+                                  idVersions, bbVersionMap, phiNodePair);
+        if (phiNodePair.size () > 0) {
+          for (auto iter : phiNodePair) {
+            if (iter.second.size () > 1) {
+              instsToPrepend.push_back (new PHI (iter.first, iter.second));
+            }
+          }
+        }
+        retVal->setVersion (updateVersionNumber (retVal->getID (), 
+                                                 idVersions, 
+                                                 bbVersionMap[basicBlock]));
+      } else if (dynamic_cast <ConditionalBranch*> (instr) != nullptr) {
+        ConditionalBranch* condBr;
+        
+        condBr = dynamic_cast <ConditionalBranch*> (instr);
+        updateVersionNumberInSSA (condBr->getCondition (), basicBlock,
+                                  idVersions, bbVersionMap, phiNodePair);
+        if (phiNodePair.size () > 0) {
+          for (auto iter : phiNodePair) {
+            if (iter.second.size () > 1) {
+              instsToPrepend.push_back (new PHI (iter.first, iter.second));
+            }
+          }
+        }
+
+        basicBlockQueue.push (condBr->getThenBranch ());
+        basicBlockQueue.push (condBr->getElseBranch ());
+        
+        //assert (*condBr->getThenBranch ()->getSuccessors().begin () ==
+        //        *condBr->getElseBranch ()->getSuccessors().begin ());
+        //~ updateVersionNumberInBB (*condBr->getThenBranch ()->getSuccessors().begin (),
+                                 //~ idVersions, bbVersionMap);
+      } else if (dynamic_cast <DirectBranch*> (instr) != nullptr) {
+        DirectBranch* branch;
+        
+        branch = dynamic_cast <DirectBranch*> (instr);
+        basicBlockQueue.push (branch->getTarget ());
+      }
+    }
+    
+    for (auto instr: instsToPrepend) {
+      basicBlock->prependInstruction (instr);
+    }
+  }
 }
 
 BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd, 
@@ -235,6 +384,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       elseBasicBlock->appendInstruction (new DirectBranch (target, elseBasicBlock));
       currBasicBlock = target;
       basicBlocks.push_back (target);
+      
     } else if (dynamic_cast <WhileLoop*> (cmd) != nullptr) {
       WhileLoop* loop;
       BasicBlock* testBB;
@@ -245,19 +395,23 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       
       loop = dynamic_cast <WhileLoop*> (cmd);
       testBB = new BasicBlock ();
-      cond = (Expression*) convertToSSAIR (loop->getCondition (), 
-                                           testBB, idVersions, 
-                                           bbVersionMap);
       basicBlocks.push_back (testBB);
-      currBasicBlock->appendInstruction (new DirectBranch (testBB, currBasicBlock));
       loopBody = convertToBasicBlock (loop->getBody (), basicBlocks, 
                                       idVersions, bbVersionMap);
       loopExit = new BasicBlock ();
+      basicBlocks.push_back (loopExit);
+      
+      //testBB will have loopBody as one its predecessors
+      loopBody->appendInstruction (new BackwardBranch (testBB, loopBody)); 
+      //testBB will have currBasicBlock as one of its predecessors
+      currBasicBlock->appendInstruction (new DirectBranch (testBB, 
+                                                           currBasicBlock));
+      cond = (Expression*) convertToSSAIR (loop->getCondition (), 
+                                           testBB, idVersions, 
+                                           bbVersionMap);
       condBr = new ConditionalBranch (cond, loopBody, loopExit, testBB);
       testBB->appendInstruction (condBr);
-      loopBody->appendInstruction (new DirectBranch (testBB, loopBody));
       currBasicBlock = loopExit;
-      basicBlocks.push_back (loopExit);
     } else {
       PHINodePair phiPair;
       Instruction* ssaInstr;
@@ -280,6 +434,7 @@ BasicBlock* convertToSSA (ComplexCommand* cmd)
   
   firstBasicBlock = convertToBasicBlock (cmd, basicBlocks, idVersions, 
                                          bbVersionMap);
+  updateVersionNumberInBB (firstBasicBlock, idVersions, bbVersionMap);
   
   for (auto bb : basicBlocks) {
     
@@ -295,68 +450,67 @@ BasicBlock* convertToSSA (ComplexCommand* cmd)
 int main ()
 {
   //test1
-  {
-    // X1 = A1 (input)
-    // X2 = A2 (X1)
-    std::cout << "Test 1" << std::endl;
-    JSONIdentifier X1("X1"), X2("X2");
-    JSONInput input;
-    CallAction CallA1(&X1, "A1", &input);
-    CallAction CallA2(&X2, "A2", &X1);
-    std::vector<SimpleCommand*> v;
-    v.push_back(&CallA1);
-    v.push_back(&CallA2);
-    ComplexCommand allCmds(v);
+  //~ {
+    //~ // X1 = A1 (input)
+    //~ // X2 = A2 (X1)
+    //~ std::cout << "Test 1" << std::endl;
+    //~ JSONIdentifier X1("X1"), X2("X2");
+    //~ JSONInput input;
+    //~ CallAction CallA1(&X1, "A1", &input);
+    //~ CallAction CallA2(&X2, "A2", &X1);
+    //~ std::vector<SimpleCommand*> v;
+    //~ v.push_back(&CallA1);
+    //~ v.push_back(&CallA2);
+    //~ ComplexCommand allCmds(v);
     
-    BasicBlock* firstBlock = convertToSSA (&allCmds);
-    //convertToSSA (firstBlock);
-    //firstBlock->print (std::cout);
-    //~ std::vector<WhiskSequence*> seqs = Converter::convert (&allCmds);
-    std::vector<WhiskSequence*> seqs;
-    firstBlock->convert (seqs);
-    for (auto seq : seqs) {
-        seq->generateCommand (std::cout);
-        std::cout << std::endl << std::endl;
-    }
-    seqs[0]->print ();
-    std::cout << std::endl;
-  }
-  //test2
-  identifiers.clear ();
-   {
-    //X1 = A1 (input)
-    //if X1 then X2 = A2(X1) else X2 = A3(X1)
-    //X3 = A4 (X2)
-    std::cout << "If then else "<< std::endl;
-    JSONIdentifier X1("X1"), X2("X2"), X3 ("X3");
-    JSONInput input;
-    CallAction CallA1(&X1, "A1", &input);
-    CallAction CallA2(&X2, "A2", &X1);
-    CallAction CallA3(&X2, "A3", &X1);
-    IfThenElseCommand ifX1(&X1, &CallA2, &CallA3);
-    CallAction CallA4(&X3, "A4", &X2);
-    std::vector<SimpleCommand*> v;
-    v.push_back(&CallA1);
-    v.push_back(&ifX1);
-    v.push_back(&CallA4);
+    //~ BasicBlock* firstBlock = convertToSSA (&allCmds);
+    //~ //convertToSSA (firstBlock);
+    //~ //firstBlock->print (std::cout);
+    //~ std::vector<WhiskSequence*> seqs;
+    //~ firstBlock->convert (seqs);
+    //~ for (auto seq : seqs) {
+        //~ seq->generateCommand (std::cout);
+        //~ std::cout << std::endl << std::endl;
+    //~ }
+    //~ seqs[0]->print ();
+    //~ std::cout << std::endl;
+  //~ }
+  //~ //test2
+  //~ identifiers.clear ();
+   //~ {
+    //~ //X1 = A1 (input)
+    //~ //if X1 then X2 = A2(X1) else X2 = A3(X1)
+    //~ //X3 = A4 (X2)
+    //~ std::cout << "If then else "<< std::endl;
+    //~ JSONIdentifier X1("X1"), X2("X2"), X3 ("X3");
+    //~ JSONInput input;
+    //~ CallAction CallA1(&X1, "A1", &input);
+    //~ CallAction CallA2(&X2, "A2", &X1);
+    //~ CallAction CallA3(&X2, "A3", &X1);
+    //~ IfThenElseCommand ifX1(&X1, &CallA2, &CallA3);
+    //~ CallAction CallA4(&X3, "A4", &X2);
+    //~ std::vector<SimpleCommand*> v;
+    //~ v.push_back(&CallA1);
+    //~ v.push_back(&ifX1);
+    //~ v.push_back(&CallA4);
     
-    ComplexCommand cmd1(v);
+    //~ ComplexCommand cmd1(v);
     
-    BasicBlock* firstBlock = convertToSSA (&cmd1);
-    //convertToSSA (firstBlock);
-    //firstBlock->print (std::cout);
-    std::cout << std::endl;
+    //~ BasicBlock* firstBlock = convertToSSA (&cmd1);
+    //~ //convertToSSA (firstBlock);
+    //~ //firstBlock->print (std::cout);
+    //~ std::cout << std::endl;
     
-    std::vector<WhiskSequence*> seqs;
-    firstBlock->convert (seqs);
-    for (auto seq : seqs) {
-        seq->generateCommand (std::cout);
-        std::cout << std::endl;
-    }
+    //~ std::vector<WhiskSequence*> seqs;
+    //~ firstBlock->convert (seqs);
+    //~ for (auto seq : seqs) {
+        //~ seq->generateCommand (std::cout);
+        //~ std::cout << std::endl;
+    //~ }
     
-    seqs[0]->print ();
-    std::cout << std::endl;
-  }
+    //~ seqs[0]->print ();
+    //~ std::cout << std::endl;
+  //~ }
   
   //~ {
     //~ //X1 = A1 (input)
