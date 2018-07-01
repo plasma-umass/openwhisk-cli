@@ -64,7 +64,7 @@ public:
   void setCallStmt(Call* _callStmt);
   virtual std::string convert ();
   std::string getID () const {return identifier;}
-  
+  std::string getIDWithVersion () const {return identifier+"_"+std::to_string (version);}
   virtual void print (std::ostream& os)
   {
     os << identifier+"_"+std::to_string(version);
@@ -86,12 +86,12 @@ class Call : public Instruction
 protected:
   Identifier* retVal;
   ActionName actionName;
-  Expression* arg;
+  Identifier* arg;
   std::string forkName;
   std::string projName;
   
 public:
-  Call (Identifier* _retVal, ActionName _actionName, Expression* _arg) : 
+  Call (Identifier* _retVal, ActionName _actionName, Identifier* _arg) : 
     Instruction(), retVal(_retVal), actionName (_actionName), arg(_arg) 
   {
     retVal->setCallStmt(this);
@@ -101,9 +101,9 @@ public:
   
   Identifier* getReturnValue() {return retVal;}
   virtual std::string getActionName() {return actionName;}
-  Expression* getArgument() {return arg;}
+  Identifier* getArgument() {return arg;}
   void setReturnValue (Identifier* ret) {retVal = ret;}
-  void setArgument (Expression* _arg) {arg = _arg;}
+  void setArgument (Identifier* _arg) {arg = _arg;}
   
   virtual std::string getForkName() 
   {
@@ -112,8 +112,9 @@ public:
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
-    return new WhiskProjForkPair (new WhiskProjection (projName, arg->convert ()),
-                                  new WhiskFork (getForkName (), getActionName ()));
+    return new WhiskProjForkPair (new WhiskProjection (projName, R"(. * {\"input\": )"+arg->convert()+"}"),
+                                  new WhiskFork (getForkName (), getActionName (), 
+                                  retVal->getIDWithVersion()));
   }
   
   std::string getProjName ()
@@ -151,24 +152,31 @@ public:
   }
 };
 
-class LoadPointer : public Call
+class LoadPointer : public Instruction
 {
+private:
+  Identifier* retVal;
+  Pointer* ptr;
+  std::string projName;
+  
 public:
-  LoadPointer (Identifier* _retVal, Pointer* _ptr) : Call (_retVal, "Load", _ptr)
-  {}
+  LoadPointer (Identifier* _retVal, Pointer* _ptr) : retVal(_retVal), ptr(_ptr)
+  {
+    projName = "Proj_Load_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+  }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
      std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
      return new WhiskProjection (projName,
-                                 ". * {\"saved\":{\""+retValID+ "\":"+arg->convert () + "}}");
+                                 R"(. * {\"saved\":{\")"+retValID+ R"(\":)"+ptr->convert () + "}}");
   }
   
   virtual void print (std::ostream& os)
   {
     retVal->print (os);
     os << " = Load ";
-    arg->print (os);
+    ptr->print (os);
     os << std::endl;
   }
   
@@ -177,6 +185,11 @@ public:
     return retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
     fprintf(stderr, "LoadPointer::getForkName() should not be called\n");
     abort ();
+  }
+  
+  virtual std::string getActionName () 
+  {
+    return projName;
   }
 };
 
@@ -197,7 +210,7 @@ public:
   {
     std::string code;
     
-    code = ". * { \"saved\" : {\" " + ptr->getName () + "\":" + expr->convert () + "}}";
+    code = R"(. * { \"saved\" : {\" )" + ptr->getName () + R"(\":)" + expr->convert () + "}}";
     
     return new WhiskProjection (projName, code);
   }
@@ -311,6 +324,39 @@ public:
     os << getBasicBlockName () <<":" << std::endl;
     for (auto cmd : cmds) {
       cmd->print (os);
+    }
+  }
+};
+
+class Program : public IRNode
+{
+private:
+  std::vector <BasicBlock*> basicBlocks;
+
+public:
+  Program (std::vector <BasicBlock*> _basicBlocks) : basicBlocks(_basicBlocks)
+  {}
+  
+  Program ()
+  {}
+  
+  void addBasicBlock (BasicBlock* basicBlock)
+  {
+    basicBlocks.push_back (basicBlock);
+  }
+  
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+    basicBlocks[0]->convert (basicBlockCollection);
+    
+    return new WhiskProgram ("Program_"+gen_random_str(WHISK_SEQ_NAME_LENGTH), 
+                             basicBlockCollection);
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    for (auto block : basicBlocks) {
+      block->print (os);
     }
   }
 };
@@ -716,7 +762,7 @@ public:
     to_ret = "{";
     
     for (auto kvpair : kvpairs) {
-      to_ret = "\"" + kvpair->getKey () + "\":" + kvpair->getValue ()->convert (); 
+      to_ret = R"(\")" + kvpair->getKey () + R"(\":)" + kvpair->getValue ()->convert (); 
     }
     
     to_ret = "}";
@@ -806,7 +852,7 @@ public:
   
   virtual std::string convert ()
   {
-    return "[\"" + keyName + "\"]";
+    return R"([\")" + keyName + R"(\"])";
   }
 };
 #endif /*__SSA_H__*/

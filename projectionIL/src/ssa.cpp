@@ -19,7 +19,7 @@ void Identifier::setCallStmt(Call* _callStmt)
 std::string Identifier::convert ()
 {
   if (callStmt == nullptr) {
-    return ".saved."+getID () + "_" + std::to_string(version);
+    return ".saved."+getIDWithVersion();
   }
   
   /*if (callStmts.find(_callStmt) == callStmts.end()) {
@@ -29,7 +29,7 @@ std::string Identifier::convert ()
   }*/
   
   //if (callStmts.size() == 1) {
-    return ".saved.output_"+callStmt->getForkName ();
+    return R"(. * {\"input\":.saved.output_)"+callStmt->getForkName ()+"}";
   
   /*else {
     std::string output_key = "output_"+_callStmt;

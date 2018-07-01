@@ -1,6 +1,6 @@
 #include <string>
 #include <vector>
-
+#include <string.h>
 #include "utils.h"
 
 #ifndef __WHISK_ACTION_H__
@@ -8,13 +8,14 @@
 
 #define WHISK_CLI_PATH "./wsk"
 #define WHISK_CLI_ARGS "-i"
+#define ECHO(x) (std::string("echo \"")+x+"\"")
 enum
 {
   WHISK_FORK_NAME_LENGTH = 10,
   WHISK_SEQ_NAME_LENGTH = 10,
   WHISK_PROJ_NAME_LENGTH = 10
 };
-
+  
 class WhiskAction
 {
 private:
@@ -69,10 +70,10 @@ public:
       action->generateCommand (os);
     }
     
-    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " << getName () << " --sequence ";
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action update " << getName () << " --sequence ";
     if (actions.size () > 0) {
       for (int i = 0; i < actions.size () - 1; i++) {
-        os << actions[i]->getNameForSeq () << ", ";
+        os << actions[i]->getNameForSeq () << ",";
       }
       
       os << actions[actions.size () - 1]->getNameForSeq () << std::endl;
@@ -99,14 +100,10 @@ public:
   
   virtual void generateCommand(std::ostream& os)
   {
-    char temp[] = "wsk-proj-XXXXXX";
-    if (mkstemp(&temp[0]) == -1) {
-      fprintf (stderr, "Cannot create temporary file '%s'", temp);
-      abort ();
-    }
-    
-    os << "echo " << getProjCode () << " > " << "/tmp/" << temp << "\n";
-    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " << getName () << " --proj " << " /tmp/" << temp << "\n";
+    char temp[256];
+    assert (getProjectionTempFile (temp, 256) != -1);
+    os << ECHO(getProjCode ()) << " > " << "/tmp/" << temp << "\n";
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action update " << getName () << " --projection " << " /tmp/" << temp << "\n";
   }
 };
 
@@ -115,13 +112,17 @@ class WhiskFork : public WhiskAction
 private:
   std::string innerActionName;
   WhiskAction* innerAction;
-
+  std::string resultProjectionName;
+  std::string returnName;
+  
 public:
-  WhiskFork (std::string name, std::string _innerActionName) : WhiskAction(name), innerActionName(_innerActionName)
+  WhiskFork (std::string name, std::string _innerActionName, std::string _returnName) : 
+    WhiskAction(name), innerActionName(_innerActionName), returnName(_returnName)
   {
   }
   
-  WhiskFork (std::string name, WhiskAction* _innerAction) : WhiskAction(name), innerAction(_innerAction)
+  WhiskFork (std::string name, WhiskAction* _innerAction, std::string _returnName) : 
+    WhiskAction(name), innerAction(_innerAction), returnName (_returnName)
   {
     innerActionName = innerAction->getName ();
   }
@@ -129,6 +130,11 @@ public:
   std::string getInnerActionName()
   {
     return innerActionName;
+  }
+  
+  std::string getResultProjectionName ()
+  {
+    return resultProjectionName;
   }
   
   WhiskAction* getInnerAction() {return innerAction;}
@@ -140,8 +146,17 @@ public:
   
   virtual void generateCommand(std::ostream& os)
   {
-    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action create " <<
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action update " <<
       getName() << " --fork " << getInnerActionName() << std::endl;
+    
+    char temp[256];
+    assert (getProjectionTempFile (temp, 256) != -1);
+    char code[2048];
+    resultProjectionName = "Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH);
+    sprintf (code, R"(. * {\"saved\": {\"%s\": .input}})", returnName.c_str());
+    os << ECHO(code) << " > /tmp/" << temp << std::endl;
+    os << WHISK_CLI_PATH << " " WHISK_CLI_ARGS << " action update " << 
+       resultProjectionName << " --projection /tmp/" << temp << std::endl;
   }
 };
 
@@ -171,7 +186,7 @@ public:
     fork->generateCommand(os);
   }
   
-  virtual std::string getNameForSeq () {return proj->getName () + std::string(", ") + fork->getName ();}
+  virtual std::string getNameForSeq () {return proj->getName () + std::string(",") + fork->getName () + "," + fork->getResultProjectionName();}
 };
 
 class WhiskApp : public WhiskAction
@@ -202,7 +217,7 @@ public:
   WhiskDirectBranch (std::string _target) : target(_target)
   {
     proj = new WhiskProjection ("Proj_DirectBranch_" +gen_random_str (WHISK_PROJ_NAME_LENGTH), 
-                       ". * {\"action\":" + target+"}"); //TODO: Wrap correctly in app.
+                       R"(. * {\"action\":)" + target+"}"); //TODO: Wrap correctly in app.
     
   }
   
@@ -217,6 +232,53 @@ public:
     //os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action invoke " << getName () << std::endl;
   }
   
-  virtual std::string getNameForSeq () {return std::string(proj->getName ()) + ", App";}
+  virtual std::string getNameForSeq () {return std::string(proj->getName ()) + ",App";}
+};
+
+class WhiskProgram : public WhiskAction
+{
+private:
+  std::vector <WhiskSequence*> basicBlocks;
+
+public:
+  WhiskProgram (std::string _name) :WhiskAction(_name)
+  {}
+  
+  WhiskProgram (std::string _name, std::vector <WhiskSequence*> _basicBlocks) :WhiskAction(_name), basicBlocks(_basicBlocks)
+  {}
+  
+  void addBasicBlock (WhiskSequence* block)
+  {
+    basicBlocks.push_back (block);
+  }
+  
+  virtual void print ()
+  {
+    fprintf (stdout, "(WhiskProgram %s, %ld, (", getName (), basicBlocks.size ());
+    
+    for (auto block : basicBlocks) {
+      block->print ();
+      fprintf (stdout, " -> ");
+    } 
+    
+    fprintf (stdout, "))\n");
+  }
+  
+  virtual void generateCommand(std::ostream& os)
+  {
+    for (auto block : basicBlocks) {
+      block->generateCommand (os);
+      std::cout << std::endl;
+    }
+    
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action update " << getName () << " --program ";
+    if (basicBlocks.size () > 0) {
+      for (int i = 0; i < basicBlocks.size () - 1; i++) {
+        os << basicBlocks[i]->getNameForSeq () << ",";
+      }
+      
+      os << basicBlocks[basicBlocks.size () - 1]->getNameForSeq () << std::endl;
+    }
+  }
 };
 #endif

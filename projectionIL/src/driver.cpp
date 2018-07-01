@@ -21,6 +21,23 @@ typedef std::unordered_map <std::string, int> VersionMap;
 typedef std::unordered_map <BasicBlock*, std::unordered_map <std::string, int> > BasicBlockVersionMap;
 typedef std::unordered_map <Identifier*, std::vector<std::pair <BasicBlock*, Identifier*>>> PHINodePair;
 
+int getProjectionTempFile (char* file, size_t size)
+{
+  char temp[] = "wsk-proj-XXXXXX";
+  if (mkstemp(&temp[0]) == -1) {
+    fprintf (stderr, "Cannot create temporary file '%s'", temp);
+    abort ();
+    return -1;
+  }
+  
+  if (size < strlen (temp)) {
+    return -1;
+  }
+  
+  memcpy (file, temp, strlen (temp));
+  return 0;
+}
+
 std::string gen_random_str(const int len)
 {
   static const char alphanum[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -107,7 +124,7 @@ void allPredsDefiningID (BasicBlock* currBasicBlock, Identifier* id,
   }
   
   auto preds = currBasicBlock->getPredecessors();
-  std::cout << "preds.size () " << currBasicBlock->getBasicBlockName () <<  " " <<  preds.size () << std::endl;
+  //std::cout << "preds.size () " << currBasicBlock->getBasicBlockName () <<  " " <<  preds.size () << std::endl;
   visited.insert (currBasicBlock);
   for (auto pred : preds) {
     if (visited.count (pred) == 0 and 
@@ -135,8 +152,6 @@ void updateVersionNumberInSSA (IRNode* irNode, BasicBlock* basicBlock,
     
     if (phiNodePairForID.size () > 0) {
       for (auto iter : phiNodePairForID) {
-        std::cout << "AAAA " << basicBlock->getBasicBlockName () << std::endl;
-        iter.first->print (std::cout);
         if (iter.second.size () >= 2) {
           updateVersionNumber (iter.first->getID (), idVersions, 
                               bbVersionMap[basicBlock]);
@@ -196,9 +211,6 @@ void updateVersionNumberInBB (BasicBlock* basicBlock,
         condBr = dynamic_cast <ConditionalBranch*> (instr);
         updateVersionNumberInSSA (condBr->getCondition (), basicBlock,
                                   idVersions, bbVersionMap, phiNodePair);
-        std::cout << "phiNodePair.size () = " << phiNodePair.size () << std::endl;
-        condBr->getCondition ()->print (std::cout);
-        std::cout << std::endl;
         if (phiNodePair.size () > 0) {
           for (auto iter : phiNodePair) {
             if (iter.second.size () > 1) {
@@ -290,7 +302,6 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     } else {
       inputID = input->getIdentifier ();
     
-      std::cout << "inputID " << inputID << std::endl;
       //~ allPredsDefiningID (currBasicBlock, createNewIdentifier(inputID), bbVersionMap, phiPair);
       if (false and phiPair.size () > 0) {
         //~ newInputID = updateVersionNumber (inputID, idVersions, bbVersionMap[currBasicBlock]);
@@ -491,7 +502,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
   return firstBasicBlock;
 }
 
-BasicBlock* convertToSSA (ComplexCommand* cmd)
+Program* convertToSSA (ComplexCommand* cmd)
 {
   BasicBlockVersionMap bbVersionMap;
   VersionMap idVersions;
@@ -510,7 +521,7 @@ BasicBlock* convertToSSA (ComplexCommand* cmd)
     bb->print (std::cout);
   }
   
-  return firstBasicBlock;
+  return new Program (basicBlocks);
 }
 
 int main ()
@@ -529,16 +540,13 @@ int main ()
     v.push_back(&CallA2);
     ComplexCommand allCmds(v);
     
-    BasicBlock* firstBlock = convertToSSA (&allCmds);
+    Program* program = convertToSSA (&allCmds);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
     std::vector<WhiskSequence*> seqs;
-    firstBlock->convert (seqs);
-    for (auto seq : seqs) {
-        seq->generateCommand (std::cout);
-        std::cout << std::endl << std::endl;
-    }
-    seqs[0]->print ();
+    WhiskProgram* p = (WhiskProgram*)program->convert (seqs);
+    p->generateCommand (std::cout);
+    //~ seqs[0]->print ();
     std::cout << std::endl;
   }
   //~ //test2
@@ -562,19 +570,16 @@ int main ()
     
     ComplexCommand cmd1(v);
     
-    BasicBlock* firstBlock = convertToSSA (&cmd1);
+    Program* program = convertToSSA (&cmd1);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
     std::cout << std::endl;
     
     std::vector<WhiskSequence*> seqs;
-    firstBlock->convert (seqs);
-    for (auto seq : seqs) {
-        seq->generateCommand (std::cout);
-        std::cout << std::endl;
-    }
+    WhiskAction * p = program->convert (seqs);
+    p->generateCommand (std::cout);
     
-    seqs[0]->print ();
+    //~ seqs[0]->print ();
     std::cout << std::endl;
   }
   
@@ -633,17 +638,17 @@ int main ()
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);
     
-    BasicBlock* firstBlock = convertToSSA (&cmd1);
+    Program* firstBlock = convertToSSA (&cmd1);
     std::vector<WhiskSequence*> seqs;
     firstBlock->convert (seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;
     }
-    for (auto seq : seqs) {
-      seq->print ();
-      std::cout << std::endl;
-    }
+    //~ for (auto seq : seqs) {
+      //~ seq->print ();
+      //~ std::cout << std::endl;
+    //~ }
   }
   
   BasicBlock::numberOfBasicBlocks = 0;
@@ -669,17 +674,17 @@ int main ()
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);
     
-    BasicBlock* firstBlock = convertToSSA (&cmd1);
+    Program* firstBlock = convertToSSA (&cmd1);
     std::vector<WhiskSequence*> seqs;
     firstBlock->convert (seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;
     }
-    for (auto seq : seqs) {
-      seq->print ();
-      std::cout << std::endl;
-    }
+    //~ for (auto seq : seqs) {
+      //~ seq->print ();
+      //~ std::cout << std::endl;
+    //~ }
   }
   
   BasicBlock::numberOfBasicBlocks = 0;
@@ -706,17 +711,17 @@ int main ()
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);
     
-    BasicBlock* firstBlock = convertToSSA (&cmd1);
+    Program* firstBlock = convertToSSA (&cmd1);
     std::vector<WhiskSequence*> seqs;
     firstBlock->convert (seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;
     }
-    for (auto seq : seqs) {
-      seq->print ();
-      std::cout << std::endl;
-    }
+    //~ for (auto seq : seqs) {
+      //~ seq->print ();
+      //~ std::cout << std::endl;
+    //~ }
   }
   
   //While Inside If
