@@ -217,7 +217,7 @@ public:
   WhiskDirectBranch (std::string _target) : target(_target)
   {
     proj = new WhiskProjection ("Proj_DirectBranch_" +gen_random_str (WHISK_PROJ_NAME_LENGTH), 
-                       R"(. * {\"action\":)" + target+"}"); //TODO: Wrap correctly in app.
+                       R"(. * {\"action\":\")" + target+R"(\"})"); //TODO: Wrap correctly in app.
     
   }
   
@@ -232,7 +232,7 @@ public:
     //os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action invoke " << getName () << std::endl;
   }
   
-  virtual std::string getNameForSeq () {return std::string(proj->getName ()) + ",App";}
+  virtual std::string getNameForSeq () {return std::string(proj->getName ());}
 };
 
 class WhiskProgram : public WhiskAction

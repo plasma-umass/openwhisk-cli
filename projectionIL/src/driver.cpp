@@ -8,6 +8,7 @@
 #include <set>
 #include <utility>
 #include <queue>
+#include <algorithm>
 
 #define MAX_SEQ_NAME_SIZE 10
 #define READ_VERSION -1
@@ -512,11 +513,9 @@ Program* convertToSSA (ComplexCommand* cmd)
   firstBasicBlock = convertToBasicBlock (cmd, basicBlocks, idVersions, 
                                          bbVersionMap, nullptr);
   updateVersionNumberInBB (firstBasicBlock, idVersions, bbVersionMap);
-  
-  for (auto bb : basicBlocks) {
-    
-  }
-  
+  auto it = std::find (basicBlocks.begin(), basicBlocks.end(), firstBasicBlock);
+  basicBlocks.erase (it);
+  basicBlocks.insert (basicBlocks.begin(), firstBasicBlock);
   for (auto bb : basicBlocks) {
     bb->print (std::cout);
   }

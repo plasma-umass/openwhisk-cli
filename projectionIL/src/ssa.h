@@ -300,14 +300,15 @@ public:
      
     converted = true;
     
+    seq = new WhiskSequence (getActionName ());
+    basicBlockCollection.push_back (seq);
+    
     for (auto cmd : cmds) {
       WhiskAction* act;
       act = cmd->convert (basicBlockCollection);
-      actions.push_back (act);
+      seq->appendAction (act);
     }
     
-    seq = new WhiskSequence (getActionName (), actions);
-    basicBlockCollection.push_back (seq);
     
     return seq;
   }
@@ -518,13 +519,12 @@ public:
     code = expr->convert ();
     thenSeq = dynamic_cast <WhiskSequence*> (thenBranch->convert(basicBlockCollection));
     elseSeq = dynamic_cast <WhiskSequence*> (elseBranch->convert(basicBlockCollection));
-    code = "if ("+code+") then . * {\"action\": " + thenSeq->getName () + 
-      "} else . * {\"action\":" + elseSeq->getName () + "}";
+    code = "if ("+code+R"() then (. * {\"action\": \")" + thenSeq->getName () + 
+      R"(\"}) else (. * {\"action\":\")" + elseSeq->getName () + R"(\"}))";
     proj = new WhiskProjection ("Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH),
                                 code);
     toReturn = new WhiskSequence (seqName);
     toReturn->appendAction (proj);
-    toReturn->appendAction (new WhiskApp ());
     
     return toReturn;
   }
@@ -575,9 +575,11 @@ public:
     
     _finalString += commandExprVector[i].second->convert();
     
-    for (i = 0; i < commandExprVector.size (); i++) {
+    for (i = 1; i < commandExprVector.size (); i++) {
       _finalString += ")";
     }
+    
+    _finalString = R"(. * {\"saved\":{\")" + output->getIDWithVersion () + R"(\":)" + _finalString + "}}";
     
     return new WhiskProjection (projName, _finalString);
   }
