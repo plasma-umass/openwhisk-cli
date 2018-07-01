@@ -23,7 +23,7 @@ typedef std::unordered_map <Identifier*, std::vector<std::pair <BasicBlock*, Ide
 
 int getProjectionTempFile (char* file, size_t size)
 {
-  char temp[] = "wsk-proj-XXXXXX";
+  char temp[] = "/tmp/wsk-proj-XXXXXX";
   if (mkstemp(&temp[0]) == -1) {
     fprintf (stderr, "Cannot create temporary file '%s'", temp);
     abort ();
@@ -34,7 +34,7 @@ int getProjectionTempFile (char* file, size_t size)
     return -1;
   }
   
-  memcpy (file, temp, strlen (temp));
+  strcpy (file, temp);
   return 0;
 }
 

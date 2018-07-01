@@ -102,8 +102,8 @@ public:
   {
     char temp[256];
     assert (getProjectionTempFile (temp, 256) != -1);
-    os << ECHO(getProjCode ()) << " > " << "/tmp/" << temp << "\n";
-    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action update " << getName () << " --projection " << " /tmp/" << temp << "\n";
+    os << ECHO(getProjCode ()) << " > " << temp << "\n";
+    os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action update " << getName () << " --projection " << temp << "\n";
   }
 };
 
@@ -154,9 +154,9 @@ public:
     char code[2048];
     resultProjectionName = "Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH);
     sprintf (code, R"(. * {\"saved\": {\"%s\": .input}})", returnName.c_str());
-    os << ECHO(code) << " > /tmp/" << temp << std::endl;
+    os << ECHO(code) << " > " << temp << std::endl;
     os << WHISK_CLI_PATH << " " WHISK_CLI_ARGS << " action update " << 
-       resultProjectionName << " --projection /tmp/" << temp << std::endl;
+       resultProjectionName << " --projection " << temp << std::endl;
   }
 };
 
