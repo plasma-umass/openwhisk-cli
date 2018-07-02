@@ -568,8 +568,8 @@ public:
     int i;
     
     for (i = 0; i < commandExprVector.size () - 1; i++) {
-      _finalString += "if ("+ commandExprVector[i].second->convert() +
-        " != null) then " + commandExprVector[i].second->convert();
+      _finalString += "if ( . ^ "+ commandExprVector[i].second->convert().substr(1) +
+        " == true) then " + commandExprVector[i].second->convert();
       _finalString += " else ( ";
     }
     
