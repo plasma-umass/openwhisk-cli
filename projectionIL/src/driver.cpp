@@ -243,6 +243,32 @@ void updateVersionNumberInBB (BasicBlock* basicBlock,
 
 IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
                         VersionMap& idVersions, 
+                        BasicBlockVersionMap& bbVersionMap);
+                        
+//Takes a JSONExpression Exp, adds a statement like temp = Exp, and
+//returns temp
+Identifier* convertInputToSSAIR (JSONExpression* astNode, BasicBlock* currBasicBlock,
+                                 VersionMap& idVersions, 
+                                 BasicBlockVersionMap& bbVersionMap)
+{
+  if (dynamic_cast <JSONIdentifier*> (astNode) != nullptr) {
+    IRNode* to_ret = convertInputToSSAIR (astNode, currBasicBlock, idVersions, 
+                                          bbVersionMap);
+    assert (dynamic_cast<Identifier*> (to_ret) != nullptr);
+    return (Identifier*)to_ret;
+  }
+  
+  IRNode* exp = convertToSSAIR (astNode, currBasicBlock, idVersions, bbVersionMap);
+  assert (dynamic_cast<Expression*> (exp) != nullptr);
+  static int tempVersion = 0;
+  Identifier* out = new Identifier ("temp"+std::to_string(tempVersion++), 0, nullptr);
+  currBasicBlock->appendInstruction (new Assignment (out, dynamic_cast<Expression*> (exp)));
+  
+  return out;
+}
+
+IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
+                        VersionMap& idVersions, 
                         BasicBlockVersionMap& bbVersionMap)
 {
   if (dynamic_cast <JSONIdentifier*> (astNode) != nullptr) {
@@ -278,7 +304,6 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
         //~ return createNewIdentifier (identifierForVersion (jsonId->getIdentifier (), idVersions));
       //~ }
     }
-    
   } else if (dynamic_cast <ReturnJSON*> (astNode) != nullptr) {
     ReturnJSON* retJson;
     
@@ -341,22 +366,53 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     
     trans = dynamic_cast <JSONTransformation*> (astNode);
     return new Transformation ((Identifier*) convertToSSAIR (trans->getOutput (), currBasicBlock, idVersions, bbVersionMap),
-                                (Identifier*) convertToSSAIR (trans->getInput (), currBasicBlock, idVersions, bbVersionMap),
-                                (Expression*) convertToSSAIR (trans->getTransformation (), currBasicBlock, idVersions, bbVersionMap));
+                               (Identifier*) convertToSSAIR (trans->getInput (), currBasicBlock, idVersions, bbVersionMap),
+                               (Expression*) convertToSSAIR (trans->getTransformation (), currBasicBlock, idVersions, bbVersionMap));
   } else if (dynamic_cast <LetCommand*> (astNode) != nullptr) {
     abort ();
   } else if (dynamic_cast <NumberExpression*> (astNode) != nullptr) {
+      return new Number ((dynamic_cast <NumberExpression*> (astNode))->getNumber ());
   } else if (dynamic_cast <StringExpression*> (astNode) != nullptr) {
+    return new String ((dynamic_cast <StringExpression*> (astNode))->getString ());
   } else if (dynamic_cast <BooleanExpression*> (astNode) != nullptr) {
+    return new Boolean ((dynamic_cast <BooleanExpression*> (astNode))->getBoolean ());
   } else if (dynamic_cast <JSONArrayExpression*> (astNode) != nullptr) {
   } else if (dynamic_cast <KeyValuePair*> (astNode) != nullptr) {
+    KeyValuePair* kv = dynamic_cast <KeyValuePair*> (astNode);
+    //TODO: call convertInputToSSAIR?
+    IRNode* node = convertToSSAIR (kv->getValue (), currBasicBlock, idVersions, bbVersionMap);
+    assert (dynamic_cast <JSONKeyValuePair*> (node) != nullptr);
+    return new JSONKeyValuePair (kv->getKey (), (Expression*)node);
   } else if (dynamic_cast <JSONObjectExpression*> (astNode) != nullptr) {
+    std::vector<JSONKeyValuePair*> jsonkvpairs;
+    JSONObjectExpression* e = (JSONObjectExpression*) (astNode);
+    for (KeyValuePair* kv : e->getKVPairs ()) {
+      //TODO: call convertInputToSSAIR?
+      IRNode* node = convertToSSAIR (kv, currBasicBlock, idVersions, bbVersionMap);
+      assert (dynamic_cast <JSONKeyValuePair*> (node) != nullptr);
+      jsonkvpairs.push_back ((JSONKeyValuePair*)node);
+    }
+    
+    return new JSONObject (jsonkvpairs);
   } else if (dynamic_cast <JSONInput*> (astNode) != nullptr) {
     return new Input ();
   } else if (dynamic_cast <JSONPatternApplication*> (astNode) != nullptr) {
+    JSONPatternApplication* patapp = (JSONPatternApplication*) astNode;
+    //TODO: call convertInputToSSAIR?
+    IRNode* exp = convertToSSAIR (patapp->getExpression (), currBasicBlock, idVersions, bbVersionMap);
+    IRNode* pat = convertToSSAIR (patapp->getPattern (), currBasicBlock, idVersions, bbVersionMap);
+    assert (dynamic_cast <Pattern*> (pat) != nullptr);
+    assert (dynamic_cast <Expression*> (exp) != nullptr);
+    return new PatternApplication ((Expression*)exp, (Pattern*)pat);
   } else if (dynamic_cast <FieldGetJSONPattern*> (astNode) != nullptr) {
+    FieldGetJSONPattern* pat = (FieldGetJSONPattern*)astNode;
+    return new FieldGetPattern (pat->getFieldName ());
   } else if (dynamic_cast <ArrayIndexJSONPattern*> (astNode) != nullptr) {
+    ArrayIndexJSONPattern* pat = (ArrayIndexJSONPattern*) astNode;
+    return new ArrayIndexPattern (pat->getIndex ());
   } else if (dynamic_cast <KeyGetJSONPattern*> (astNode) != nullptr) {
+    KeyGetJSONPattern* pat = (KeyGetJSONPattern*) astNode;
+    return new KeyGetPattern (pat->getKeyName ());
   } else {
     fprintf (stderr, "Invalid AstNode type\n");
     abort ();

@@ -514,6 +514,11 @@ public:
   {
     return std::to_string (number);
   }
+  
+  float getNumber ()
+  {
+    return number;
+  }
 };
 
 class StringExpression : public ConstantExpression
@@ -527,6 +532,11 @@ public:
   }
   
   virtual std::string convert ()
+  {
+    return str;
+  }
+  
+  std::string getString () 
   {
     return str;
   }
@@ -550,6 +560,11 @@ public:
     else {
       return "False";
     }
+  }
+  
+  bool getBoolean ()
+  {
+    return boolean;
   }
 };
 
@@ -616,6 +631,11 @@ public:
     
     return to_ret;
   }
+  
+  std::vector<KeyValuePair*>& getKVPairs ()
+  {
+    return kvpairs;
+  }
 };
 
 class JSONInput : public JSONIdentifier 
@@ -646,7 +666,6 @@ public:
   }
   
   JSONPattern* getPattern () {return pat;}
-  
   JSONExpression* getExpression () {return expr;}
   
   virtual std::string convert () 
@@ -665,6 +684,11 @@ public:
   {
   }
   
+  std::string getFieldName ()
+  {
+    return fieldName;
+  }
+  
   virtual std::string convert ()
   {
     return "." + fieldName;
@@ -681,6 +705,11 @@ public:
   {
   }
   
+  int getIndex ()
+  {
+    return index;
+  }
+  
   virtual std::string convert ()
   {
     return "[" + std::to_string (index) + "]";
@@ -695,6 +724,11 @@ private:
 public:
   KeyGetJSONPattern (std::string _keyName) : keyName(_keyName) 
   {
+  }
+  
+  std::string getKeyName ()
+  {
+    return keyName;
   }
   
   virtual std::string convert ()

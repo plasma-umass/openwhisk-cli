@@ -426,6 +426,46 @@ public:
   }
 };
 
+class Assignment : public Instruction
+{//TODO: Make Assignment a transformation
+private:
+  Identifier* out;
+  Expression* in;
+  std::string name;
+  
+public:
+  Assignment (Identifier* _out, Expression* _in) : 
+    Instruction(), out(_out), in(_in)
+  {
+    name = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
+  }
+  
+  const Identifier* getOutput() {return out;}
+  const Expression* getInput() {return in;}
+  
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+    std::string code;
+    fprintf (stderr, "Assignment::convert To implement\n");
+    assert (false);
+    return new WhiskProjection (name, "");
+  }
+  
+  virtual std::string getActionName ()
+  {
+    return name;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    out->print(os);
+    os << " = " ;
+    os << "(";
+    in->print (os);
+    os << ")" << std::endl; 
+  }
+};
+
 class Let : public Instruction
 {
 private:
@@ -669,6 +709,11 @@ public:
   {
     return std::to_string (number);
   }
+  
+  virtual void print (std::ostream& os) 
+  {
+    os << number;
+  }
 };
 
 class String : public Constant
@@ -684,6 +729,11 @@ public:
   virtual std::string convert ()
   {
     return str;
+  }
+  
+  virtual void print (std::ostream& os) 
+  {
+    os << R"(\")" << str << R"(\")";
   }
 };
 
@@ -705,6 +755,14 @@ public:
     else {
       return "False";
     }
+  }
+  
+  virtual void print (std::ostream& os) 
+  {
+    if (boolean) 
+      os << "True";
+    else
+      os << "False";
   }
 };
 
@@ -745,6 +803,12 @@ public:
   
   std::string getKey () {return key;}
   Expression* getValue () {return value;}
+  
+  virtual void print (std::ostream& os) 
+  {
+    os << R"(\")" << key << R"(\":)";
+    value->print (os);
+  }
 };
 
 class JSONObject : public Expression
@@ -770,6 +834,15 @@ public:
     to_ret = "}";
     
     return to_ret;
+  }
+  
+  virtual void print (std::ostream& os) 
+  {
+    os << "{";
+    for (auto kvpair : kvpairs) {
+      kvpair->print (os);
+    }
+    os << "}";
   }
 };
 
@@ -804,6 +877,13 @@ public:
   
   Expression* getExpression () {return expr;}
   
+  virtual void print (std::ostream& os) 
+  {
+    expr->print (os);
+    os << " = ";
+    pat->print (os);
+  }
+  
   virtual std::string convert () 
   {
     return getExpression ()->convert () + getPattern ()->convert ();
@@ -824,6 +904,11 @@ public:
   {
     return "." + fieldName;
   }
+  
+  virtual void print (std::ostream& os) 
+  {
+    os << "." << fieldName;
+  }
 };
 
 class ArrayIndexPattern : public Pattern
@@ -840,6 +925,11 @@ public:
   {
     return "[" + std::to_string (index) + "]";
   }
+  
+  virtual void print (std::ostream& os) 
+  {
+    os << "[" << index << "]";
+  }
 };
 
 class KeyGetPattern : public Pattern
@@ -855,6 +945,11 @@ public:
   virtual std::string convert ()
   {
     return R"([\")" + keyName + R"(\"])";
+  }
+  
+  virtual void print (std::ostream& os) 
+  {
+    os << R"([\")" << keyName << R"(\"])";
   }
 };
 #endif /*__SSA_H__*/
