@@ -445,10 +445,7 @@ public:
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
-    std::string code;
-    fprintf (stderr, "Assignment::convert To implement\n");
-    assert (false);
-    return new WhiskProjection (name, "");
+    return new WhiskProjection (name, in->convert ());
   }
   
   virtual std::string getActionName ()
@@ -809,6 +806,11 @@ public:
     os << R"(\")" << key << R"(\":)";
     value->print (os);
   }
+  
+  virtual std::string convert ()
+  {
+    return R"(\")" + getKey () + R"(\":)" + getValue ()->convert ();
+  }
 };
 
 class JSONObject : public Expression
@@ -827,8 +829,13 @@ public:
     
     to_ret = "{";
     
-    for (auto kvpair : kvpairs) {
-      to_ret = R"(\")" + kvpair->getKey () + R"(\":)" + kvpair->getValue ()->convert (); 
+    if (kvpairs.size () > 0) {
+      int i = 0;
+      for (i = 0; i < kvpairs.size () - 1; i++) {
+        to_ret += kvpairs[i]->convert () + ","; 
+      }
+      
+      to_ret += kvpairs[i]->convert ();
     }
     
     to_ret = "}";
@@ -865,17 +872,17 @@ public:
 class PatternApplication : public Expression
 {
 private:
-  Expression* expr;
+  Identifier* expr;
   Pattern* pat;
   
 public:
-  PatternApplication (Expression* _expr, Pattern* _pat): expr(_expr), pat(_pat)
+  PatternApplication (Identifier* _expr, Pattern* _pat): expr(_expr), pat(_pat)
   {
   }
   
   Pattern* getPattern () {return pat;}
   
-  Expression* getExpression () {return expr;}
+  Identifier* getIdentifier () {return expr;}
   
   virtual void print (std::ostream& os) 
   {
@@ -886,7 +893,10 @@ public:
   
   virtual std::string convert () 
   {
-    return getExpression ()->convert () + getPattern ()->convert ();
+    std::string pat = getPattern ()->convert ();
+    std::string id = getIdentifier ()->convert ();
+    
+    return id + pat;
   }
 };
 

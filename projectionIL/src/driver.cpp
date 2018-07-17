@@ -402,8 +402,8 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     IRNode* exp = convertToSSAIR (patapp->getExpression (), currBasicBlock, idVersions, bbVersionMap);
     IRNode* pat = convertToSSAIR (patapp->getPattern (), currBasicBlock, idVersions, bbVersionMap);
     assert (dynamic_cast <Pattern*> (pat) != nullptr);
-    assert (dynamic_cast <Expression*> (exp) != nullptr);
-    return new PatternApplication ((Expression*)exp, (Pattern*)pat);
+    assert (dynamic_cast <Identifier*> (exp) != nullptr);
+    return new PatternApplication ((Identifier*)exp, (Pattern*)pat);
   } else if (dynamic_cast <FieldGetJSONPattern*> (astNode) != nullptr) {
     FieldGetJSONPattern* pat = (FieldGetJSONPattern*)astNode;
     return new FieldGetPattern (pat->getFieldName ());

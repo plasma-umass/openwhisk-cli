@@ -624,7 +624,7 @@ public:
     to_ret = "{";
     
     for (auto kvpair : kvpairs) {
-      to_ret = "\"" + kvpair->getKey () + "\":" + kvpair->getValue ()->convert (); 
+      to_ret = R"(\")" + kvpair->getKey () + R"(\":)" + kvpair->getValue ()->convert (); 
     }
     
     to_ret = "}";
