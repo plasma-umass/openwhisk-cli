@@ -37,6 +37,31 @@ std::string JSONIdentifier::convert ()
   }*/
 }
 
+CallAction* Action::operator () (JSONIdentifier* out, JSONIdentifier* in)
+{
+  return new CallAction (out, name, in);
+}
+
+JSONPatternApplication JSONExpression::operator [] (std::string key)
+{
+  return JSONPatternApplication (this, new KeyGetJSONPattern (key));
+}
+
+JSONPatternApplication JSONExpression::operator [] (const char* key)
+{
+  return JSONPatternApplication (this, new KeyGetJSONPattern (std::string(key)));
+}
+
+JSONPatternApplication JSONExpression::operator [] (int index)
+{
+  return JSONPatternApplication (this, new ArrayIndexJSONPattern (index));
+}
+
+//~ JSONAssignment* JSONIdentifier::operator= (JSONExpression& exp)
+//~ {
+  //~ return new JSONAssignment (this, exp);
+//~ }
+  
 //~ WhiskAction* JSONTransformation::convert(std::vector<WhiskSequence*>& basicBlockCollection)
 //~ {
   //~ std::string code;

@@ -73,6 +73,8 @@ typedef std::string ActionName;
 
 class JSONPatternApplication;
 class CallAction;
+class JSONIdentifier;
+class JSONAssignment;
 
 class ASTVisitor 
 {
@@ -87,10 +89,27 @@ public:
   virtual ~ASTNode () {}
 };
 
+class Action : public ASTNode
+{
+protected:
+  std::string name;
+  
+public:
+  Action (std::string _name) : name (_name) {}
+  
+  std::string getName () {return name;}
+  CallAction* operator () (JSONIdentifier* out, JSONIdentifier* in);
+  virtual void print (std::ostream& os) {fprintf (stderr, "Action::print should never be called\n"); abort ();}
+};
+
 class JSONExpression : public ASTNode
 {
 public:
   virtual std::string convert () = 0;
+
+  virtual JSONPatternApplication operator [] (std::string key);
+  virtual JSONPatternApplication operator [] (const char* key);
+  virtual JSONPatternApplication operator [] (int index);
 };
 
 class JSONIdentifier : public JSONExpression
@@ -120,6 +139,8 @@ public:
   {
     os << identifier;
   }
+  
+  //TODO: JSONAssignment* operator= (const JSONExpression&* exp);
 };
 
 class Command : public ASTNode
@@ -146,6 +167,7 @@ class SimpleCommand : public Command
 public:
   SimpleCommand (): Command(SimpleCommandType) {}
   virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
+  virtual ~SimpleCommand () {}
 };
 
 class ComplexCommand : public Command
@@ -168,6 +190,11 @@ public:
   {
     converted = false;
     actionName = "Sequence_" + gen_random_str (WHISK_SEQ_NAME_LENGTH);
+  }
+  
+  void operator () (SimpleCommand* cmd)
+  {
+    appendSimpleCommand (cmd);
   }
   
   void appendSimpleCommand (SimpleCommand* c)
@@ -310,7 +337,7 @@ public:
 
 class JSONAssignment : public SimpleCommand
 {
-  private:
+private:
   JSONIdentifier* out;
   JSONExpression* in;
   std::string name;
@@ -325,8 +352,6 @@ public:
   JSONIdentifier* getOutput() {return out;}
   JSONExpression* getInput() {return in;}
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection);
-  
   virtual std::string getActionName ()
   {
     return name;
@@ -337,6 +362,10 @@ public:
     out->print (os);
     os << " = ";
     in->print (os);
+  }
+  virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+    abort ();
   }
 };
 
@@ -742,6 +771,11 @@ public:
   {
     return "[" + std::to_string (index) + "]";
   }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "[" << index << "]";
+  }
 };
 
 class KeyGetJSONPattern : public JSONPattern
@@ -762,6 +796,11 @@ public:
   virtual std::string convert ()
   {
     return "[\"" + keyName + "\"]";
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "[\"" << keyName << "\"]";
   }
 };
 

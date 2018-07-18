@@ -18,6 +18,13 @@
   #error "READ_VERSION and WRITE_VERSION are same."
 #endif
 
+//TODO: Instead of dynamic_cast use maybe enums?
+//TODO: Make this language embedded in C++
+//TODO: Add More operators, ==, !=, <=, >=, for String/ints/floats
+//TODO-DONE: Fill in the SSA functions
+//TODO: Add test cases
+//TODO: Add complex pattern so as to decrease number of projection action generation
+
 typedef std::unordered_map <std::string, int> VersionMap;
 typedef std::unordered_map <BasicBlock*, std::unordered_map <std::string, int> > BasicBlockVersionMap;
 typedef std::unordered_map <Identifier*, std::vector<std::pair <BasicBlock*, Identifier*>>> PHINodePair;
@@ -125,7 +132,6 @@ void allPredsDefiningID (BasicBlock* currBasicBlock, Identifier* id,
   }
   
   auto preds = currBasicBlock->getPredecessors();
-  //std::cout << "preds.size () " << currBasicBlock->getBasicBlockName () <<  " " <<  preds.size () << std::endl;
   visited.insert (currBasicBlock);
   for (auto pred : preds) {
     if (visited.count (pred) == 0 and 
@@ -165,6 +171,21 @@ void updateVersionNumberInSSA (IRNode* irNode, BasicBlock* basicBlock,
   } else if (dynamic_cast <PatternApplication*> (irNode) != nullptr) {
     PatternApplication* patapp = (PatternApplication*) irNode;
     updateVersionNumberInSSA (patapp->getIdentifier (), basicBlock, idVersions,
+                              bbVersionMap, phiNodePair);
+  } else if (dynamic_cast <JSONObject*> (irNode) != nullptr) {
+    JSONObject* obj;
+    
+    obj = (JSONObject*) irNode;
+    for (auto kvpair : obj->getKeyValuePairs ()) {
+      updateVersionNumberInSSA (kvpair, basicBlock, idVersions,
+                              bbVersionMap, phiNodePair);
+    }
+    
+  } else if (dynamic_cast <JSONKeyValuePair*> (irNode) != nullptr) {
+    JSONKeyValuePair* kvpair;
+    
+    kvpair = (JSONKeyValuePair*) irNode;
+    updateVersionNumberInSSA (kvpair->getValue (), basicBlock, idVersions,
                               bbVersionMap, phiNodePair);
   } else {
     abort ();
@@ -236,8 +257,17 @@ void updateVersionNumberInBB (BasicBlock* basicBlock,
       } else if (dynamic_cast <DirectBranch*> (instr) != nullptr) {
         DirectBranch* branch;
         
-        branch = dynamic_cast <DirectBranch*> (instr);
+        branch = (DirectBranch*) (instr);
         basicBlockQueue.push (branch->getTarget ());
+      } else if (dynamic_cast <Assignment*> (instr) != nullptr) {
+        Assignment* assign;
+        
+        assign = (Assignment*) instr;
+        updateVersionNumberInSSA (assign->getOutput (), basicBlock, 
+                                  idVersions, bbVersionMap, phiNodePair);
+      } else {
+        //fprintf (stderr, "Type '%s' not implemented\n", typeid (instr).name());
+        //abort ();
       }
     }
     
@@ -258,8 +288,8 @@ Identifier* convertInputToSSAIR (JSONExpression* astNode, BasicBlock* currBasicB
                                  BasicBlockVersionMap& bbVersionMap)
 {
   if (dynamic_cast <JSONIdentifier*> (astNode) != nullptr) {
-    IRNode* to_ret = convertInputToSSAIR (astNode, currBasicBlock, idVersions, 
-                                          bbVersionMap);
+    IRNode* to_ret = convertToSSAIR (astNode, currBasicBlock, idVersions, 
+                                     bbVersionMap);
     assert (dynamic_cast<Identifier*> (to_ret) != nullptr);
     return (Identifier*)to_ret;
   }
@@ -411,8 +441,7 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     return new Input ();
   } else if (dynamic_cast <JSONPatternApplication*> (astNode) != nullptr) {
     JSONPatternApplication* patapp = (JSONPatternApplication*) astNode;
-    //TODO: call convertInputToSSAIR?
-    IRNode* exp = convertToSSAIR (patapp->getExpression (), currBasicBlock, idVersions, bbVersionMap);
+    IRNode* exp = convertInputToSSAIR (patapp->getExpression (), currBasicBlock, idVersions, bbVersionMap);
     IRNode* pat = convertToSSAIR (patapp->getPattern (), currBasicBlock, idVersions, bbVersionMap);
     assert (dynamic_cast <Pattern*> (pat) != nullptr);
     assert (dynamic_cast <Identifier*> (exp) != nullptr);
@@ -594,6 +623,31 @@ Program* convertToSSA (ComplexCommand* cmd)
 
 int main ()
 {
+  //test0
+  {
+    ComplexCommand cmds;
+    JSONInput input;
+    JSONIdentifier X1("X1"), X2("X2");
+    Action A1 ("A1"), A2 ("A2");
+    cmds (A1 (&X1, &input));
+    auto pq = X1[0][std::string("x")];
+    //cmds (new JSONAssignment (&X2, &pq));//.x //TODO: gen code
+    /*cmds (IfThenElseCommand ifthen (X))
+    ifthen.thenStart ()
+    ifthen.then() (X2 = A3 (&X4));
+    ifthen.thenEnd ()
+    ifthen.else()
+    ifthen.elseEnd()*/
+    Program* program = convertToSSA (&cmds);
+    //convertToSSA (firstBlock);
+    //firstBlock->print (std::cout);
+    std::vector<WhiskSequence*> seqs;
+    WhiskProgram* p = (WhiskProgram*)program->convert (seqs);
+    p->generateCommand (std::cout);
+    //~ seqs[0]->print ();
+    std::cout << std::endl;
+  }
+  
   //test1
   {
     //~ // X1 = A1 (input)

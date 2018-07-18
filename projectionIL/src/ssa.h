@@ -440,8 +440,8 @@ public:
     name = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
   
-  const Identifier* getOutput() {return out;}
-  const Expression* getInput() {return in;}
+  Identifier* getOutput() const {return out;}
+  Expression* getInput() const {return in;}
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
@@ -821,6 +821,11 @@ private:
 public:
   JSONObject (std::vector<JSONKeyValuePair*> _kvpairs) : kvpairs(_kvpairs) 
   {
+  }
+  
+  std::vector<JSONKeyValuePair*>& getKeyValuePairs ()
+  {
+    return kvpairs;
   }
   
   virtual std::string convert ()
