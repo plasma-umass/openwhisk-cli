@@ -71,6 +71,7 @@
 
 typedef std::string ActionName;
 
+class JSONPatternApplication;
 class CallAction;
 
 class ASTVisitor 
@@ -278,48 +279,64 @@ public:
   }
 };
 
-class JSONTransformation : public SimpleCommand
+//~ class JSONTransformation : public JSONExpression
+//~ {
+//~ private:
+  //~ JSONExpression* in;
+  //~ JSONPatternApplication* transformation;
+  //~ std::string name;
+  
+//~ public:
+  //~ JSONTransformation (JSONExpression* _in, JSONPatternApplication* _trans) : 
+    //~ SimpleCommand(), in(_in), transformation(_trans) 
+  //~ {
+    //~ name = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
+  //~ }
+  
+  //~ JSONIdentifier* getOutput() {return out;}
+  //~ JSONIdentifier* getInput() {return in;}
+  //~ JSONPatternApplication* getTransformation() {return transformation;}
+  
+  //~ virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection);
+  
+  //~ virtual std::string getActionName ()
+  //~ {
+    //~ return name;
+  //~ }
+  
+  
+  //~ virtual void print (std::ostream& os);
+//~ };
+
+class JSONAssignment : public SimpleCommand
 {
-private:
+  private:
   JSONIdentifier* out;
-  JSONIdentifier* in;
-  JSONExpression* transformation;
+  JSONExpression* in;
   std::string name;
   
 public:
-  JSONTransformation (JSONIdentifier* _out, JSONIdentifier* _in, JSONExpression* _trans) : 
-    SimpleCommand(), out(_out), in(_in), transformation(_trans) 
+  JSONAssignment (JSONIdentifier* _out, JSONExpression* _in) : 
+    out(_out), in(_in)
   {
     name = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
   
   JSONIdentifier* getOutput() {return out;}
-  JSONIdentifier* getInput() {return in;}
-  JSONExpression* getTransformation() {return transformation;}
+  JSONExpression* getInput() {return in;}
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    std::string code;
-    
-    code = transformation->convert ();
-    
-    return new WhiskProjection (name, code);
-  }
+  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection);
   
   virtual std::string getActionName ()
   {
     return name;
   }
   
-  
   virtual void print (std::ostream& os)
   {
-    out->print(os);
-    os << " = " ;
-    transformation->print (os);
-    os << "(";
+    out->print (os);
+    os << " = ";
     in->print (os);
-    os << ")" << std::endl; 
   }
 };
 
@@ -668,6 +685,12 @@ public:
   JSONPattern* getPattern () {return pat;}
   JSONExpression* getExpression () {return expr;}
   
+  virtual void print(std::ostream& os)
+  {
+    expr->print(os);
+    pat->print(os);
+  }
+  
   virtual std::string convert () 
   {
     return getExpression ()->convert () + getPattern ()->convert ();
@@ -687,6 +710,11 @@ public:
   std::string getFieldName ()
   {
     return fieldName;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "." << fieldName;
   }
   
   virtual std::string convert ()
@@ -736,4 +764,6 @@ public:
     return "[\"" + keyName + "\"]";
   }
 };
+
+//TODO: Add complex pattern
 #endif /*__AST_H__*/

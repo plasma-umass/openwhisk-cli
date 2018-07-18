@@ -162,6 +162,12 @@ void updateVersionNumberInSSA (IRNode* irNode, BasicBlock* basicBlock,
     }
     
     id->setVersion (latestVersion (id->getID (), idVersions));
+  } else if (dynamic_cast <PatternApplication*> (irNode) != nullptr) {
+    PatternApplication* patapp = (PatternApplication*) irNode;
+    updateVersionNumberInSSA (patapp->getIdentifier (), basicBlock, idVersions,
+                              bbVersionMap, phiNodePair);
+  } else {
+    abort ();
   }
 }
 
@@ -361,14 +367,21 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     return new Call (newOutput, callAction->getActionName (),
                      newInput);
                      //TODO: (Expression*)convertToSSAIR (callAction->getArgument ()));
-  } else if (dynamic_cast <JSONTransformation*> (astNode) != nullptr) {
+  } /*else if (dynamic_cast <JSONTransformation*> (astNode) != nullptr) {
     JSONTransformation* trans;
+    PatternApplication* patapp;
     
     trans = dynamic_cast <JSONTransformation*> (astNode);
-    return new Transformation ((Identifier*) convertToSSAIR (trans->getOutput (), currBasicBlock, idVersions, bbVersionMap),
-                               (Identifier*) convertToSSAIR (trans->getInput (), currBasicBlock, idVersions, bbVersionMap),
-                               (Expression*) convertToSSAIR (trans->getTransformation (), currBasicBlock, idVersions, bbVersionMap));
-  } else if (dynamic_cast <LetCommand*> (astNode) != nullptr) {
+    IRNode* in = convertToSSAIR (trans->getInput (), currBasicBlock, idVersions, bbVersionMap);
+    IRNode* pat = convertToSSAIR (trans->getTransformation (), currBasicBlock, idVersions, bbVersionMap);
+    IRNode* out = convertToSSAIR (trans->getOutput (), currBasicBlock, idVersions, bbVersionMap);
+    assert (dynamic_cast<Pattern*> (pat) != nullptr);
+    assert (dynamic_cast<Identifier*> (in) != nullptr);
+    assert (dynamic_cast<Identifier*> (out) != nullptr);
+    
+    patapp = new PatternApplication ((Identifier*)in, (Pattern*)pat);    
+    return new Assignment ((Identifier*) out, patapp);
+  } */else if (dynamic_cast <LetCommand*> (astNode) != nullptr) {
     abort ();
   } else if (dynamic_cast <NumberExpression*> (astNode) != nullptr) {
       return new Number ((dynamic_cast <NumberExpression*> (astNode))->getNumber ());
@@ -617,6 +630,40 @@ int main ()
     CallAction CallA2(&X2, "A2", &X1);
     CallAction CallA3(&X2, "A3", &X1);
     IfThenElseCommand ifX1(&X1, &CallA2, &CallA3);
+    CallAction CallA4(&X3, "A4", &X2);
+    std::vector<SimpleCommand*> v;
+    v.push_back(&CallA1);
+    v.push_back(&ifX1);
+    v.push_back(&CallA4);
+    
+    ComplexCommand cmd1(v);
+    
+    Program* program = convertToSSA (&cmd1);
+    //convertToSSA (firstBlock);
+    //firstBlock->print (std::cout);
+    std::cout << std::endl;
+    
+    std::vector<WhiskSequence*> seqs;
+    WhiskAction * p = program->convert (seqs);
+    p->generateCommand (std::cout);
+    
+    //~ seqs[0]->print ();
+    std::cout << std::endl;
+  }
+  
+  identifiers.clear ();
+   {
+    //X1 = A1 (input)
+    //if X1 then X2 = A2(X1) else X2 = A3(X1)
+    //X3 = A4 (X2)
+    std::cout << "If then else "<< std::endl;
+    JSONIdentifier X1("X1"), X2("X2"), X3 ("X3");
+    JSONInput input;
+    CallAction CallA1(&X1, "A1", &input);
+    CallAction CallA2(&X2, "A2", &X1);
+    CallAction CallA3(&X2, "A3", &X1);
+    JSONPatternApplication cond (&X1, new FieldGetJSONPattern ("text"));
+    IfThenElseCommand ifX1(&cond, &CallA2, &CallA3);
     CallAction CallA4(&X3, "A4", &X2);
     std::vector<SimpleCommand*> v;
     v.push_back(&CallA1);

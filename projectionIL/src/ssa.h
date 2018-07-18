@@ -427,7 +427,7 @@ public:
 };
 
 class Assignment : public Instruction
-{//TODO: Make Assignment a transformation
+{
 private:
   Identifier* out;
   Expression* in;
@@ -887,7 +887,6 @@ public:
   virtual void print (std::ostream& os) 
   {
     expr->print (os);
-    os << " = ";
     pat->print (os);
   }
   
@@ -962,4 +961,32 @@ public:
     os << R"([\")" << keyName << R"(\"])";
   }
 };
+
+class Patterns : public Pattern
+{
+private:
+  std::vector <Pattern*> pats;
+
+public:
+  Patterns () {}
+  Patterns (std::vector<Pattern*>& _pats) : pats (_pats) {}
+  
+  virtual std::string convert ()
+  {
+    std::string toRet = "";
+    for (auto pat : pats) {
+      toRet += pat->convert ();
+    }
+    
+    return toRet;
+  }
+  
+  virtual void print (std::ostream& os) 
+  {
+    for (auto pat : pats) {
+      pat->print (os);
+    }
+  }
+};
+
 #endif /*__SSA_H__*/

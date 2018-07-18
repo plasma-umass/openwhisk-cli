@@ -36,3 +36,22 @@ std::string JSONIdentifier::convert ()
     return ". * {\"saved\": { \"" + identifier +"\":"+output + "}}";
   }*/
 }
+
+//~ WhiskAction* JSONTransformation::convert(std::vector<WhiskSequence*>& basicBlockCollection)
+//~ {
+  //~ std::string code;
+  
+  //~ code = transformation->convert ();
+  
+  //~ return new WhiskProjection (name, code);
+//~ }
+
+//~ void JSONTransformation::print (std::ostream& os)
+//~ {
+  //~ out->print(os);
+  //~ os << " = " ;
+  //~ transformation->print (os);
+  //~ os << "(";
+  //~ in->print (os);
+  //~ os << ")" << std::endl; 
+//~ }
