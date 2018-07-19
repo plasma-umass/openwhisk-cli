@@ -21,6 +21,7 @@
 //TODO: Instead of dynamic_cast use maybe enums?
 //TODO: Make this language embedded in C++
 //TODO: Add More operators, ==, !=, <=, >=, for String/ints/floats
+//TODO: Add ConditionExpression in both IL and SSA
 //TODO-DONE: Fill in the SSA functions
 //TODO: Add test cases
 //TODO: Add complex pattern so as to decrease number of projection action generation
@@ -557,7 +558,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       loop = dynamic_cast <WhileLoop*> (cmd);
       testBB = new BasicBlock ();
       basicBlocks.push_back (testBB);
-      loopBody = convertToBasicBlock (loop->getBody (), basicBlocks, 
+      loopBody = convertToBasicBlock (&loop->getBody (), basicBlocks, 
                                       idVersions, bbVersionMap, &innerExitBlock);
       
       //TODO: Make sure that for every load there is a store from every path coming
@@ -657,7 +658,7 @@ int main ()
     ifthen.getThenBranch() (A2 (&X3, &X2));
     //~ifthen.thenEnd ()
     //~ifthen.else()
-    ifthen.getElseBranch1() (A2 (&X4, &X2));
+    ifthen.getElseBranch() (A2 (&X4, &X2));
     Program* program = convertToSSA (&cmds);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
@@ -845,7 +846,7 @@ int main ()
     CallAction A1 (&X1, "A1", &input);
     WhileLoop loop2 (&X1, new CallAction (&X1, "A2", &X1));
     WhileLoop loop (&X1, &loop2);
-    loop.getBody()->appendSimpleCommand (new CallAction (&X2, "A3", &X1));
+    loop.getBody().appendSimpleCommand (new CallAction (&X2, "A3", &X1));
     ComplexCommand cmd1;
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);
@@ -881,8 +882,8 @@ int main ()
     CallAction A1 (&X1, "A1", &input);
     WhileLoop loop2 (&X1, new CallAction (&X1, "A2", &X1));
     WhileLoop loop (&X1, &loop2);
-    loop.getBody()->appendSimpleCommand (new CallAction (&X2, "A3", &X1));
-    loop.getBody()->appendSimpleCommand (new WhileLoop (&X2, new CallAction (&X2, "A4", &X1)));
+    loop.getBody().appendSimpleCommand (new CallAction (&X2, "A3", &X1));
+    loop.getBody().appendSimpleCommand (new WhileLoop (&X2, new CallAction (&X2, "A4", &X1)));
     ComplexCommand cmd1;
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);

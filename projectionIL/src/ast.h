@@ -111,6 +111,18 @@ public:
   virtual JSONPatternApplication& operator [] (const char* key);
   virtual JSONPatternApplication& operator [] (int index);
   virtual JSONPatternApplication& getField (std::string fieldName);
+  
+  /*TODO:virtual JSONExpression& operator== (std::string value);
+  virtual JSONExpression& operator== (int value);
+  virtual JSONExpression& operator== (bool value);
+  virtual JSONExpression& operator== (JSONExpression& value);
+  
+  virtual JSONExpression& operator!= (std::string value);
+  virtual JSONExpression& operator!= (int value);
+  virtual JSONExpression& operator!= (bool value);
+  virtual JSONExpression& operator!= (JSONExpression& value);
+  */
+  
 };
 
 class JSONIdentifier : public JSONExpression
@@ -490,6 +502,11 @@ private:
   JSONExpression* cond;
   
 public:
+  WhileLoop (JSONExpression* _cond)
+  {
+    cmds = new ComplexCommand ();
+  }
+  
   WhileLoop (JSONExpression* _cond, ComplexCommand* _cmds) : cond(_cond), cmds(_cmds)
   {}
   
@@ -504,9 +521,9 @@ public:
     return cond;
   }
   
-  ComplexCommand* getBody ()
+  ComplexCommand& getBody ()
   {
-    return cmds;
+    return *cmds;
   }
   
   virtual void print (std::ostream& os)
