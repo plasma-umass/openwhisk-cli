@@ -107,9 +107,10 @@ class JSONExpression : public ASTNode
 public:
   virtual std::string convert () = 0;
 
-  virtual JSONPatternApplication operator [] (std::string key);
-  virtual JSONPatternApplication operator [] (const char* key);
-  virtual JSONPatternApplication operator [] (int index);
+  virtual JSONPatternApplication& operator [] (std::string key);
+  virtual JSONPatternApplication& operator [] (const char* key);
+  virtual JSONPatternApplication& operator [] (int index);
+  virtual JSONPatternApplication& getField (std::string fieldName);
 };
 
 class JSONIdentifier : public JSONExpression
@@ -394,6 +395,14 @@ private:
   std::string seqName;
   
 public:
+  IfThenElseCommand (JSONExpression* _expr) 
+  {
+    expr = _expr;
+    seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
+    thenBranch = new ComplexCommand ();
+    elseBranch = new ComplexCommand ();
+  }
+  
   IfThenElseCommand (JSONExpression* _expr, ComplexCommand* _thenBranch, 
                      ComplexCommand* _elseBranch)
   {
@@ -414,14 +423,14 @@ public:
     seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
-  ComplexCommand* getThenBranch () 
+  ComplexCommand& getThenBranch () 
   {
-    return thenBranch;
+    return *thenBranch;
   }
   
-  ComplexCommand* getElseBranch ()
+  ComplexCommand& getElseBranch ()
   {
-    return elseBranch;
+    return *elseBranch;
   }
   
   void setThenBranch (ComplexCommand* _thenBranch)

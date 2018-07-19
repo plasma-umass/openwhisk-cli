@@ -170,6 +170,7 @@ void updateVersionNumberInSSA (IRNode* irNode, BasicBlock* basicBlock,
     id->setVersion (latestVersion (id->getID (), idVersions));
   } else if (dynamic_cast <PatternApplication*> (irNode) != nullptr) {
     PatternApplication* patapp = (PatternApplication*) irNode;
+    std::cout << patapp->getIdentifier ()->getID () << std::endl;
     updateVersionNumberInSSA (patapp->getIdentifier (), basicBlock, idVersions,
                               bbVersionMap, phiNodePair);
   } else if (dynamic_cast <JSONObject*> (irNode) != nullptr) {
@@ -264,6 +265,8 @@ void updateVersionNumberInBB (BasicBlock* basicBlock,
         
         assign = (Assignment*) instr;
         updateVersionNumberInSSA (assign->getOutput (), basicBlock, 
+                                  idVersions, bbVersionMap, phiNodePair);
+        updateVersionNumberInSSA (assign->getInput (), basicBlock, 
                                   idVersions, bbVersionMap, phiNodePair);
       } else {
         //fprintf (stderr, "Type '%s' not implemented\n", typeid (instr).name());
@@ -441,7 +444,11 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     return new Input ();
   } else if (dynamic_cast <JSONPatternApplication*> (astNode) != nullptr) {
     JSONPatternApplication* patapp = (JSONPatternApplication*) astNode;
-    IRNode* exp = convertInputToSSAIR (patapp->getExpression (), currBasicBlock, idVersions, bbVersionMap);
+    fprintf (stderr, "patapp pat '%s'\n", typeid(*patapp->getPattern ()).name());
+    
+    IRNode* exp = convertInputToSSAIR (patapp->getExpression (), 
+                                       currBasicBlock, idVersions, 
+                                       bbVersionMap);
     IRNode* pat = convertToSSAIR (patapp->getPattern (), currBasicBlock, idVersions, bbVersionMap);
     assert (dynamic_cast <Pattern*> (pat) != nullptr);
     assert (dynamic_cast <Identifier*> (exp) != nullptr);
@@ -455,8 +462,19 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
   } else if (dynamic_cast <KeyGetJSONPattern*> (astNode) != nullptr) {
     KeyGetJSONPattern* pat = (KeyGetJSONPattern*) astNode;
     return new KeyGetPattern (pat->getKeyName ());
+  } else if (dynamic_cast <JSONAssignment*> (astNode) != nullptr) {
+    JSONAssignment* assign;
+    
+    assign = (JSONAssignment*)astNode;
+    IRNode* out = convertToSSAIR (assign->getOutput (), currBasicBlock, 
+                                  idVersions, bbVersionMap);
+    IRNode* exp = convertInputToSSAIR (assign->getInput (), currBasicBlock,
+                                       idVersions, bbVersionMap);
+    assert (dynamic_cast <Identifier*> (out) != nullptr);
+    assert (dynamic_cast <Expression*> (exp) != nullptr);
+    return new Assignment ((Identifier*)out, (Expression*)exp);
   } else {
-    fprintf (stderr, "Invalid AstNode type\n");
+    fprintf (stderr, "Invalid AstNode type '%s'\n", typeid(*astNode).name());
     abort ();
   }
   
@@ -506,10 +524,10 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       PHINodePair phiPair;
       
       ifThenElsecmd = dynamic_cast <IfThenElseCommand*> (cmd);
-      thenBasicBlock = convertToBasicBlock (ifThenElsecmd->getThenBranch (), 
+      thenBasicBlock = convertToBasicBlock (&ifThenElsecmd->getThenBranch (), 
                                             basicBlocks, idVersions, 
                                             bbVersionMap, nullptr);
-      elseBasicBlock = convertToBasicBlock (ifThenElsecmd->getElseBranch (), 
+      elseBasicBlock = convertToBasicBlock (&ifThenElsecmd->getElseBranch (), 
                                             basicBlocks, idVersions, 
                                             bbVersionMap, nullptr);
       cond = (Expression*) convertToSSAIR (ifThenElsecmd->getCondition (), 
@@ -627,17 +645,19 @@ int main ()
   {
     ComplexCommand cmds;
     JSONInput input;
-    JSONIdentifier X1("X1"), X2("X2");
+    JSONIdentifier X1("X1"), X2("X2"), X3("X3"), X4("X4");
     Action A1 ("A1"), A2 ("A2");
     cmds (A1 (&X1, &input));
-    auto pq = X1[0][std::string("x")];
-    //cmds (new JSONAssignment (&X2, &pq));//.x //TODO: gen code
-    /*cmds (IfThenElseCommand ifthen (X))
-    ifthen.thenStart ()
-    ifthen.then() (X2 = A3 (&X4));
-    ifthen.thenEnd ()
-    ifthen.else()
-    ifthen.elseEnd()*/
+    //auto pq = X1[0]["x"];
+    //auto qq = pq;
+    cmds (new JSONAssignment (&X2, &X1[0]["x"]));
+    IfThenElseCommand ifthen (&X2);
+    cmds (&ifthen);
+    //~ ifthen.thenStart ()
+    ifthen.getThenBranch() (A2 (&X3, &X2));
+    //~ifthen.thenEnd ()
+    //~ifthen.else()
+    ifthen.getElseBranch1() (A2 (&X4, &X2));
     Program* program = convertToSSA (&cmds);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);

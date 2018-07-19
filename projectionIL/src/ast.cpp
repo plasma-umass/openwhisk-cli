@@ -42,19 +42,24 @@ CallAction* Action::operator () (JSONIdentifier* out, JSONIdentifier* in)
   return new CallAction (out, name, in);
 }
 
-JSONPatternApplication JSONExpression::operator [] (std::string key)
+JSONPatternApplication& JSONExpression::getField (std::string fieldName)
 {
-  return JSONPatternApplication (this, new KeyGetJSONPattern (key));
+  return *(new JSONPatternApplication (this, new FieldGetJSONPattern (fieldName)));
 }
 
-JSONPatternApplication JSONExpression::operator [] (const char* key)
+JSONPatternApplication& JSONExpression::operator [] (std::string key)
 {
-  return JSONPatternApplication (this, new KeyGetJSONPattern (std::string(key)));
+  return *(new JSONPatternApplication (this, new KeyGetJSONPattern (key)));
 }
 
-JSONPatternApplication JSONExpression::operator [] (int index)
+JSONPatternApplication& JSONExpression::operator [] (const char* key)
 {
-  return JSONPatternApplication (this, new ArrayIndexJSONPattern (index));
+  return *(new JSONPatternApplication (this, new KeyGetJSONPattern (std::string(key))));
+}
+
+JSONPatternApplication& JSONExpression::operator [] (int index)
+{
+  return *(new JSONPatternApplication (this, new ArrayIndexJSONPattern (index)));
 }
 
 //~ JSONAssignment* JSONIdentifier::operator= (JSONExpression& exp)
