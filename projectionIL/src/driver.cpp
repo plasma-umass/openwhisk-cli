@@ -20,7 +20,7 @@
 
 //TODO: Instead of dynamic_cast use maybe enums?
 //TODO: Make this language embedded in C++
-//TODO: Add More operators, ==, !=, <=, >=, for String/ints/floats
+//TODO: Add Logical Operators
 //TODO: Add ConditionExpression in both IL and SSA
 //TODO-DONE: Fill in the SSA functions
 //TODO: Add test cases
@@ -189,7 +189,17 @@ void updateVersionNumberInSSA (IRNode* irNode, BasicBlock* basicBlock,
     kvpair = (JSONKeyValuePair*) irNode;
     updateVersionNumberInSSA (kvpair->getValue (), basicBlock, idVersions,
                               bbVersionMap, phiNodePair);
+  } else if (dynamic_cast <Conditional*> (irNode) != nullptr) {
+    Conditional* cond;
+    
+    cond = (Conditional*) irNode;
+    updateVersionNumberInSSA (cond->getOp1 (), basicBlock, idVersions,
+                              bbVersionMap, phiNodePair);
+    updateVersionNumberInSSA (cond->getOp2 (), basicBlock, idVersions,
+                              bbVersionMap, phiNodePair);
+  } else if (dynamic_cast <Constant*> (irNode) != nullptr) {
   } else {
+    std::cout << __FUNCTION__ << " not implemented for " << typeid (*irNode).name() << std::endl;
     abort ();
   }
 }
@@ -474,6 +484,20 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     assert (dynamic_cast <Identifier*> (out) != nullptr);
     assert (dynamic_cast <Expression*> (exp) != nullptr);
     return new Assignment ((Identifier*)out, (Expression*)exp);
+  } else if (dynamic_cast <JSONConditional*> (astNode) != nullptr) {
+    JSONConditional* cond;
+    IRNode* op1, *op2;
+    
+    cond = (JSONConditional*) astNode;
+    op1 = convertInputToSSAIR (cond->getOp1 (), currBasicBlock, idVersions, 
+                               bbVersionMap); 
+    op2 = convertInputToSSAIR (cond->getOp2 (), currBasicBlock, idVersions, 
+                               bbVersionMap);
+    assert (dynamic_cast <Expression*> (op1) != nullptr);
+    assert (dynamic_cast <Expression*> (op2) != nullptr);
+    
+    return new Conditional ((Expression*)op1, cond->getOperator (), 
+                            (Expression*)op2);
   } else {
     fprintf (stderr, "Invalid AstNode type '%s'\n", typeid(*astNode).name());
     abort ();
@@ -520,7 +544,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       BasicBlock* elseBasicBlock;
       IfThenElseCommand* ifThenElsecmd;
       ConditionalBranch *condBr;
-      Expression* cond;
+      IRNode* cond;
       BasicBlock* target;
       PHINodePair phiPair;
       
@@ -531,10 +555,11 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       elseBasicBlock = convertToBasicBlock (&ifThenElsecmd->getElseBranch (), 
                                             basicBlocks, idVersions, 
                                             bbVersionMap, nullptr);
-      cond = (Expression*) convertToSSAIR (ifThenElsecmd->getCondition (), 
-                                           currBasicBlock, idVersions, 
-                                           bbVersionMap);
-      condBr = new ConditionalBranch (cond, thenBasicBlock, 
+      cond = convertToSSAIR (ifThenElsecmd->getCondition (), 
+                             currBasicBlock, idVersions, 
+                             bbVersionMap);
+      assert (dynamic_cast <Conditional*> (cond) != nullptr);
+      condBr = new ConditionalBranch ((Conditional*)cond, thenBasicBlock, 
                                       elseBasicBlock, currBasicBlock);
       currBasicBlock->appendInstruction (condBr);
       target = new BasicBlock ();
@@ -548,7 +573,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
     } else if (dynamic_cast <WhileLoop*> (cmd) != nullptr) {
       WhileLoop* loop;
       BasicBlock* testBB;
-      Expression* cond;
+      IRNode* cond;
       BasicBlock* loopBody;
       BasicBlock* loopExit;
       ConditionalBranch* condBr;
@@ -592,9 +617,10 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       //testBB will have currBasicBlock as one of its predecessors
       currBasicBlock->appendInstruction (new DirectBranch (testBB, 
                                                            currBasicBlock));
-      cond = (Expression*) convertToSSAIR (loop->getCondition (),
+      cond = convertToSSAIR (loop->getCondition (),
                                            testBB, idVersions,
                                            bbVersionMap);
+      assert (dynamic_cast <Conditional*> (cond) != nullptr);
       for (auto iter : testBB->getReads ()) {
         LoadPointer* ptr;
         
@@ -604,7 +630,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       }
       
       assert (testBB->getWrites ().size () == 0);
-      condBr = new ConditionalBranch (cond, loopBody, loopExit, testBB);
+      condBr = new ConditionalBranch ((Conditional*)cond, loopBody, loopExit, testBB);
       testBB->appendInstruction (condBr);
       currBasicBlock = loopExit;
     } else {
@@ -652,7 +678,7 @@ int main ()
     //auto pq = X1[0]["x"];
     //auto qq = pq;
     cmds (new JSONAssignment (&X2, &X1[0]["x"]));
-    IfThenElseCommand ifthen (&X2);
+    IfThenElseCommand ifthen (&(X2 == 1));
     cmds (&ifthen);
     //~ ifthen.thenStart ()
     ifthen.getThenBranch() (A2 (&X3, &X2));
@@ -704,7 +730,7 @@ int main ()
     CallAction CallA1(&X1, "A1", &input);
     CallAction CallA2(&X2, "A2", &X1);
     CallAction CallA3(&X2, "A3", &X1);
-    IfThenElseCommand ifX1(&X1, &CallA2, &CallA3);
+    IfThenElseCommand ifX1(&(X1==0), &CallA2, &CallA3);
     CallAction CallA4(&X3, "A4", &X2);
     std::vector<SimpleCommand*> v;
     v.push_back(&CallA1);
@@ -738,7 +764,7 @@ int main ()
     CallAction CallA2(&X2, "A2", &X1);
     CallAction CallA3(&X2, "A3", &X1);
     JSONPatternApplication cond (&X1, new FieldGetJSONPattern ("text"));
-    IfThenElseCommand ifX1(&cond, &CallA2, &CallA3);
+    IfThenElseCommand ifX1(&(cond==0), &CallA2, &CallA3);
     CallAction CallA4(&X3, "A4", &X2);
     std::vector<SimpleCommand*> v;
     v.push_back(&CallA1);
@@ -810,7 +836,7 @@ int main ()
     JSONInput input;
     
     CallAction A1 (&X1, "A1", &input);
-    WhileLoop loop (&X1, new CallAction (&X1, "A2", &X1));
+    WhileLoop loop (&(X1 < 10), new CallAction (&X1, "A2", &X1));
     ComplexCommand cmd1;
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);
@@ -844,8 +870,8 @@ int main ()
     JSONInput input;
     
     CallAction A1 (&X1, "A1", &input);
-    WhileLoop loop2 (&X1, new CallAction (&X1, "A2", &X1));
-    WhileLoop loop (&X1, &loop2);
+    WhileLoop loop2 (&(X1 < 10), new CallAction (&X1, "A2", &X1));
+    WhileLoop loop (&(X1 < 10), &loop2);
     loop.getBody().appendSimpleCommand (new CallAction (&X2, "A3", &X1));
     ComplexCommand cmd1;
     cmd1.appendSimpleCommand (&A1);
@@ -880,10 +906,10 @@ int main ()
     JSONInput input;
     
     CallAction A1 (&X1, "A1", &input);
-    WhileLoop loop2 (&X1, new CallAction (&X1, "A2", &X1));
-    WhileLoop loop (&X1, &loop2);
+    WhileLoop loop2 (&(X1 < 5), new CallAction (&X1, "A2", &X1));
+    WhileLoop loop (&(X1 < 5), &loop2);
     loop.getBody().appendSimpleCommand (new CallAction (&X2, "A3", &X1));
-    loop.getBody().appendSimpleCommand (new WhileLoop (&X2, new CallAction (&X2, "A4", &X1)));
+    loop.getBody().appendSimpleCommand (new WhileLoop (&(X2 ==0), new CallAction (&X2, "A4", &X1)));
     ComplexCommand cmd1;
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);

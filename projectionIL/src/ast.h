@@ -75,6 +75,20 @@ class JSONPatternApplication;
 class CallAction;
 class JSONIdentifier;
 class JSONAssignment;
+class JSONConditional;
+
+enum ConditionalOperator
+{
+  EQ, /*==*/
+  NE, /* !=*/
+  GE, /*>=*/
+  GT, /*>*/
+  LE, /*<=*/
+  LT, /*<*/
+};
+
+void printConditionalOperator (std::ostream& os, ConditionalOperator op);
+std::string conditionalOpConvert (ConditionalOperator op);
 
 class ASTVisitor 
 {
@@ -112,17 +126,22 @@ public:
   virtual JSONPatternApplication& operator [] (int index);
   virtual JSONPatternApplication& getField (std::string fieldName);
   
-  /*TODO:virtual JSONExpression& operator== (std::string value);
-  virtual JSONExpression& operator== (int value);
-  virtual JSONExpression& operator== (bool value);
-  virtual JSONExpression& operator== (JSONExpression& value);
+  virtual JSONConditional& operator== (std::string value);
+  virtual JSONConditional& operator== (float value);
+  virtual JSONConditional& operator== (int value);
+  virtual JSONConditional& operator== (bool value);
+  virtual JSONConditional& operator== (JSONExpression& value);
   
-  virtual JSONExpression& operator!= (std::string value);
-  virtual JSONExpression& operator!= (int value);
-  virtual JSONExpression& operator!= (bool value);
-  virtual JSONExpression& operator!= (JSONExpression& value);
-  */
+  virtual JSONConditional& operator!= (std::string value);
+  virtual JSONConditional& operator!= (float value);
+  virtual JSONConditional& operator!= (int value);
+  virtual JSONConditional& operator!= (bool value);
+  virtual JSONConditional& operator!= (JSONExpression& value);  
   
+  virtual JSONConditional& operator>= (float value);
+  virtual JSONConditional& operator> (float value);
+  virtual JSONConditional& operator<= (float value);
+  virtual JSONConditional& operator< (float value);
 };
 
 class JSONIdentifier : public JSONExpression
@@ -348,6 +367,58 @@ public:
   //~ virtual void print (std::ostream& os);
 //~ };
 
+class JSONConditional : public JSONExpression
+{
+private:
+  ConditionalOperator op;
+  JSONExpression* op1;
+  JSONExpression* op2;
+  
+public:
+  JSONConditional (JSONExpression* _op1, ConditionalOperator _op, JSONExpression* _op2) :
+    op (_op), op1(_op1), op2(_op2)
+  {}
+  
+  JSONExpression* getOp1 () {return op1;}
+  JSONExpression* getOp2 () {return op2;}
+  ConditionalOperator getOperator () {return op;}
+  
+  virtual std::string convert () {}
+  
+  static void printConditionalOperator (std::ostream& os, ConditionalOperator op)
+  {
+    switch (op) {
+      case ConditionalOperator::EQ:
+        os << "==";
+        break;
+      case ConditionalOperator::NE:
+        os << "!=";
+        break;
+      case ConditionalOperator::GT:
+        os << ">";
+        break;
+      case ConditionalOperator::GE:
+        os << ">=";
+        break;
+      case ConditionalOperator::LT:
+        os << "<";
+        break;
+      case ConditionalOperator::LE:
+        os << "<=";
+        break;
+      default:
+        assert (false);
+    }
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    op1->print (os);
+    printConditionalOperator (os, op);
+    op2->print (os);
+  }
+};
+
 class JSONAssignment : public SimpleCommand
 {
 private:
@@ -401,13 +472,13 @@ public:
 class IfThenElseCommand : public SimpleCommand
 {
 private:
-  JSONExpression* expr;
+  JSONConditional* expr;
   ComplexCommand* thenBranch;
   ComplexCommand* elseBranch;
   std::string seqName;
   
 public:
-  IfThenElseCommand (JSONExpression* _expr) 
+  IfThenElseCommand (JSONConditional* _expr) 
   {
     expr = _expr;
     seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
@@ -415,7 +486,7 @@ public:
     elseBranch = new ComplexCommand ();
   }
   
-  IfThenElseCommand (JSONExpression* _expr, ComplexCommand* _thenBranch, 
+  IfThenElseCommand (JSONConditional* _expr, ComplexCommand* _thenBranch, 
                      ComplexCommand* _elseBranch)
   {
     expr = _expr;
@@ -424,7 +495,7 @@ public:
     seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
-  IfThenElseCommand (JSONExpression* _expr, SimpleCommand* _thenBranch, 
+  IfThenElseCommand (JSONConditional* _expr, SimpleCommand* _thenBranch, 
                      SimpleCommand* _elseBranch)
   {
     expr = _expr;
@@ -455,7 +526,7 @@ public:
     elseBranch = _elseBranch;
   }
   
-  JSONExpression* getCondition ()
+  JSONConditional* getCondition ()
   {
     return expr;
   }
@@ -499,24 +570,24 @@ class WhileLoop : public SimpleCommand
 {
 private:
   ComplexCommand* cmds;
-  JSONExpression* cond;
+  JSONConditional* cond;
   
 public:
-  WhileLoop (JSONExpression* _cond)
+  WhileLoop (JSONConditional* _cond)
   {
     cmds = new ComplexCommand ();
   }
   
-  WhileLoop (JSONExpression* _cond, ComplexCommand* _cmds) : cond(_cond), cmds(_cmds)
+  WhileLoop (JSONConditional* _cond, ComplexCommand* _cmds) : cond(_cond), cmds(_cmds)
   {}
   
-  WhileLoop (JSONExpression* _cond, SimpleCommand* _cmd) : cond(_cond)
+  WhileLoop (JSONConditional* _cond, SimpleCommand* _cmd) : cond(_cond)
   {
     cmds = new ComplexCommand ();
     cmds->appendSimpleCommand (_cmd);
   }
   
-  JSONExpression* getCondition ()
+  JSONConditional* getCondition ()
   {
     return cond;
   }
@@ -591,6 +662,11 @@ public:
   {
     return number;
   }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << number;
+  }
 };
 
 class StringExpression : public ConstantExpression
@@ -612,6 +688,11 @@ public:
   {
     return str;
   }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "\"" << str << "\"";
+  }
 };
 
 class BooleanExpression : public ConstantExpression
@@ -632,6 +713,14 @@ public:
     else {
       return "False";
     }
+  }
+  
+  void print (std::ostream& os)
+  {
+    if (boolean)
+      os << "True";
+    else
+      os << "False";
   }
   
   bool getBoolean ()

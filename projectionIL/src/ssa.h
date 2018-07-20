@@ -8,6 +8,7 @@
 #include <assert.h>
 #include "whisk_action.h"
 #include "utils.h"
+#include "ast.h"
 
 #ifndef __SSA_H__
 #define __SSA_H__
@@ -480,17 +481,48 @@ public:
   }
 };
 
+class Conditional : public Expression
+{
+private:
+  ConditionalOperator op;
+  Expression* op1;
+  Expression* op2;
+  
+public:
+  Conditional (Expression* _op1, ConditionalOperator _op, Expression* _op2) :
+    op (_op), op1(_op1), op2(_op2)
+  {}
+  
+  Expression* getOp1 () {return op1;}
+  Expression* getOp2 () {return op2;}
+  ConditionalOperator getOperator () {return op;}
+  
+  virtual std::string convert () 
+  {
+    return op1->convert () + " " + conditionalOpConvert (op) + " " + op2->convert ();
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    op1->print (os);
+    os << " ";
+    printConditionalOperator (os, op);
+    os << " ";
+    op2->print (os);
+  }
+};
+
 class ConditionalBranch : public Instruction
 {
 private:
-  Expression* expr;
+  Conditional* expr;
   BasicBlock* thenBranch;
   BasicBlock* elseBranch;
   std::string seqName;
   BasicBlock* parent;
   
 public:
-  ConditionalBranch (Expression* _expr, BasicBlock* _thenBranch, 
+  ConditionalBranch (Conditional* _expr, BasicBlock* _thenBranch, 
                      BasicBlock* _elseBranch, BasicBlock* _parent)
   {
     expr = _expr;
@@ -504,7 +536,7 @@ public:
     seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
-  ConditionalBranch (Expression* _expr, Instruction* _thenBranch, 
+  ConditionalBranch (Conditional* _expr, Instruction* _thenBranch, 
                      Instruction* _elseBranch, BasicBlock* _parent)
   {
     expr = _expr;
@@ -540,7 +572,7 @@ public:
     elseBranch = _elseBranch;
   }
   
-  Expression* getCondition ()
+  Conditional* getCondition ()
   {
     return expr;
   }

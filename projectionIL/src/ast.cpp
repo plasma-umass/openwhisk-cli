@@ -62,6 +62,101 @@ JSONPatternApplication& JSONExpression::operator [] (int index)
   return *(new JSONPatternApplication (this, new ArrayIndexJSONPattern (index)));
 }
 
+JSONConditional& JSONExpression::operator== (std::string value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::EQ, new StringExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator== (float value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::EQ, new NumberExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator== (int value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::EQ, new NumberExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator== (bool value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::EQ, new BooleanExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator== (JSONExpression& value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::EQ, &value));
+}
+
+JSONConditional& JSONExpression::operator!= (std::string value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::NE, new StringExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator!= (float value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::NE, new NumberExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator!= (int value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::NE, new NumberExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator!= (bool value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::NE, new BooleanExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator!= (JSONExpression& value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::NE, &value));
+}
+
+JSONConditional& JSONExpression::operator>= (float value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::GE, new NumberExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator> (float value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::GT, new NumberExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator<= (float value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::LE, new NumberExpression (value)));
+}
+
+JSONConditional& JSONExpression::operator< (float value)
+{
+  return *(new JSONConditional (this, ConditionalOperator::LT, new NumberExpression (value)));
+}
+
+void printConditionalOperator (std::ostream& os, ConditionalOperator op)
+{
+  os << conditionalOpConvert (op);
+}
+
+std::string conditionalOpConvert (ConditionalOperator op)
+{
+  switch (op) {
+    case ConditionalOperator::EQ:
+      return "==";
+    case ConditionalOperator::NE:
+      return "!=";
+    case ConditionalOperator::GT:
+      return ">";
+    case ConditionalOperator::GE:
+      return ">=";
+    case ConditionalOperator::LT:
+      return "<";
+    case ConditionalOperator::LE:
+      return "<=";
+    default:
+      assert (false);
+  }
+}
+
 //~ JSONAssignment* JSONIdentifier::operator= (JSONExpression& exp)
 //~ {
   //~ return new JSONAssignment (this, exp);

@@ -1,4 +1,5 @@
 #include "ssa.h"
+#include "ast.h"
 
 #include <unordered_map>
 
