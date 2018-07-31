@@ -446,7 +446,10 @@ public:
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
-    return new WhiskProjection (name, in->convert ());
+    std::string code;
+    
+    code = R"(. * {\"saved\": {\")" + out->getIDWithVersion () + R"(\":)" + in->convert () + "}}";
+    return new WhiskProjection (name, code);
   }
   
   virtual std::string getActionName ()

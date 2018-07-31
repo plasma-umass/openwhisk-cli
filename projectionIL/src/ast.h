@@ -85,6 +85,9 @@ enum ConditionalOperator
   GT, /*>*/
   LE, /*<=*/
   LT, /*<*/
+  AND, /*&&*/
+  OR,  /*||*/
+  NOT, /* ! */
 };
 
 void printConditionalOperator (std::ostream& os, ConditionalOperator op);
@@ -142,6 +145,9 @@ public:
   virtual JSONConditional& operator> (float value);
   virtual JSONConditional& operator<= (float value);
   virtual JSONConditional& operator< (float value);
+  
+  //virtual JSONConditional& operator&& (JSONExpression& exp);
+  //virtual JSONConditional& operator|| (JSONExpression& exp);
 };
 
 class JSONIdentifier : public JSONExpression
@@ -405,6 +411,12 @@ public:
         break;
       case ConditionalOperator::LE:
         os << "<=";
+        break;
+      case ConditionalOperator::AND:
+        os << "&&";
+        break;
+      case ConditionalOperator::OR:
+        os << "||";
         break;
       default:
         assert (false);

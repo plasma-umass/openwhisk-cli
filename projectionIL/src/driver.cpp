@@ -19,9 +19,9 @@
 #endif
 
 //TODO: Instead of dynamic_cast use maybe enums?
-//TODO: Make this language embedded in C++
+//TODO: Make this language embedded in C++. Get rid of pointers?
 //TODO: Add Logical Operators
-//TODO: Add ConditionExpression in both IL and SSA
+//TODO-DONE: Add ConditionExpression in both IL and SSA
 //TODO-DONE: Fill in the SSA functions
 //TODO: Add test cases
 //TODO: Add complex pattern so as to decrease number of projection action generation
