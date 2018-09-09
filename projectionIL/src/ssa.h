@@ -32,6 +32,7 @@ class Expression : public IRNode
 {
 public:
   virtual std::string convert () = 0;
+  virtual std::string convertToLLSPL () = 0;
 };
 
 class Identifier : public Expression
@@ -64,6 +65,7 @@ public:
   int getVersion () {return version;}
   void setCallStmt(Call* _callStmt);
   virtual std::string convert ();
+  virtual std::string convertToLLSPL () {return convert ();}
   std::string getID () const {return identifier;}
   std::string getIDWithVersion () const {return identifier+"_"+std::to_string (version);}
   virtual void print (std::ostream& os)
@@ -80,6 +82,7 @@ public:
   virtual ~Instruction () {}
   virtual std::string getActionName () = 0;
   virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection) = 0;
 };
 
 class Call : public Instruction
@@ -109,6 +112,13 @@ public:
   virtual std::string getForkName() 
   {
     return forkName;
+  }
+  
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    return new LLSPLProjForkPair (new LLSPLProjection (projName, R"(. * {\"input\": )"+arg->convert()+"}"),
+                                  new LLSPLFork (getForkName (), getActionName (), 
+                                  retVal->getIDWithVersion()));
   }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
@@ -142,6 +152,11 @@ public:
   
   std::string getName () {return name;}
   
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
   virtual std::string convert () 
   {
     return ".saved."+name;
@@ -164,6 +179,13 @@ public:
   LoadPointer (Identifier* _retVal, Pointer* _ptr) : retVal(_retVal), ptr(_ptr)
   {
     projName = "Proj_Load_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+  }
+  
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
+    return new LLSPLProjection (projName,
+                                R"(. * {\"saved\":{\")"+retValID+ R"(\":)"+ptr->convert () + "}}");
   }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
@@ -205,6 +227,15 @@ public:
   StorePointer (Expression* _expr, Pointer* _ptr) : expr(_expr), ptr(_ptr) 
   {
     projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
+  }
+  
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::string code;
+    
+    code = R"(. * { \"saved\" : {\" )" + ptr->getName () + R"(\":)" + expr->convert () + "}}";
+    
+    return new LLSPLProjection (projName, code);
   }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
@@ -292,6 +323,28 @@ public:
   std::vector <BasicBlock*>& getSuccessors () {return successors;}
   const std::vector<Instruction*>& getInstructions() {return cmds;}
   
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::vector<LLSPLAction*> actions;
+    if (converted) {
+      return seq;
+    }
+     
+    converted = true;
+    
+    seq = new LLSPLSequence (getActionName ());
+    basicBlockCollection.push_back (seq);
+    
+    for (auto cmd : cmds) {
+      LLSPLAction* act;
+      act = cmd->convert (basicBlockCollection);
+      seq->appendAction (act);
+    }
+    
+    
+    return seq;
+  }
+  
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     std::vector<WhiskAction*> actions;
@@ -347,6 +400,14 @@ public:
     basicBlocks.push_back (basicBlock);
   }
   
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    basicBlocks[0]->convert (basicBlockCollection);
+    
+    return new LLSPLProgram ("Program_"+gen_random_str(WHISK_SEQ_NAME_LENGTH), 
+                             basicBlockCollection);
+  }
+  
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     basicBlocks[0]->convert (basicBlockCollection);
@@ -376,6 +437,12 @@ public:
   
   Expression* getReturnExpr() {return exp;}
   
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    return new LLSPLProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
+                                getReturnExpr ()->convert ());
+  }
+  
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
@@ -401,6 +468,15 @@ public:
   const Identifier* getOutput() {return out;}
   const Identifier* getInput() {return in;}
   const Expression* getTransformation() {return transformation;}
+  
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::string code;
+    
+    code = transformation->convert ();
+    
+    return new LLSPLProjection (name, code);
+  }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
@@ -444,6 +520,14 @@ public:
   Identifier* getOutput() const {return out;}
   Expression* getInput() const {return in;}
   
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::string code;
+    
+    code = R"(. * {\"saved\": {\")" + out->getIDWithVersion () + R"(\":)" + in->convert () + "}}";
+    return new LLSPLProjection (name, code);
+  }
+  
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     std::string code;
@@ -476,6 +560,11 @@ private:
 public:
   Let (Identifier* _id, Expression* _expr) : id(_id), expr(_expr) 
   {}
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    abort ();
+    return nullptr;
+  }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
@@ -499,6 +588,11 @@ public:
   Expression* getOp1 () {return op1;}
   Expression* getOp2 () {return op2;}
   ConditionalOperator getOperator () {return op;}
+  
+  virtual std::string convertToLLSPL () 
+  {
+    return op1->convert () + " " + conditionalOpConvert (op) + " " + op2->convert ();
+  }
   
   virtual std::string convert () 
   {
@@ -580,6 +674,14 @@ public:
     return expr;
   }
   
+  virtual LLSPLAction* convertToLLSPL(std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::cout << "Use LLSPL's if"<<std::endl;
+    abort ();
+    
+    return nullptr;
+  }
+  
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     WhiskAction* proj;
@@ -632,6 +734,28 @@ public:
   const std::vector<std::pair<BasicBlock*, Identifier*> >& getCommandExprVector ()
   {
     return commandExprVector;
+  }
+  
+  virtual LLSPLAction* convertToLLSPL(std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::string _finalString;
+    int i;
+    
+    for (i = 0; i < commandExprVector.size () - 1; i++) {
+      _finalString += "if ( . ^ "+ commandExprVector[i].second->convert().substr(1) +
+        " == true) then " + commandExprVector[i].second->convert();
+      _finalString += " else ( ";
+    }
+    
+    _finalString += commandExprVector[i].second->convert();
+    
+    for (i = 1; i < commandExprVector.size (); i++) {
+      _finalString += ")";
+    }
+    
+    _finalString = R"(. * {\"saved\":{\")" + output->getIDWithVersion () + R"(\":)" + _finalString + "}}";
+    
+    return new LLSPLProjection (projName, _finalString);
   }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection) 
@@ -690,6 +814,12 @@ public:
     parent->appendSuccessor (target);
   }
   
+  virtual LLSPLAction* convertToLLSPL(std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    target->convert (basicBlockCollection);
+    return new LLSPLDirectBranch (target->getActionName ());
+  }
+  
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
     target->convert (basicBlockCollection);
@@ -737,6 +867,11 @@ public:
   {
   }
   
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
   virtual std::string convert ()
   {
     return std::to_string (number);
@@ -763,6 +898,11 @@ public:
     return str;
   }
   
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
   virtual void print (std::ostream& os) 
   {
     os << R"(\")" << str << R"(\")";
@@ -777,6 +917,11 @@ private:
 public:
   Boolean (bool _boolean) : boolean(_boolean) 
   {
+  }
+  
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
   }
   
   virtual std::string convert ()
@@ -806,6 +951,11 @@ private:
 public:
   Array (std::vector<Expression*> _exprs): exprs(_exprs) 
   {
+  }
+  
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
   }
   
   virtual std::string convert ()
@@ -842,6 +992,11 @@ public:
     value->print (os);
   }
   
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
   virtual std::string convert ()
   {
     return R"(\")" + getKey () + R"(\":)" + getValue ()->convert ();
@@ -861,6 +1016,11 @@ public:
   std::vector<JSONKeyValuePair*>& getKeyValuePairs ()
   {
     return kvpairs;
+  }
+  
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
   }
   
   virtual std::string convert ()
@@ -897,6 +1057,12 @@ class Input : public Identifier
 {
 public:
   Input () : Identifier ("input", 0) {}
+  
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
   std::string convert ()
   {    
     return ".saved.input";
@@ -930,6 +1096,11 @@ public:
     pat->print (os);
   }
   
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
   virtual std::string convert () 
   {
     std::string pat = getPattern ()->convert ();
@@ -947,6 +1118,11 @@ private:
 public:
   FieldGetPattern (std::string _fieldName) : fieldName(_fieldName) 
   {
+  }
+  
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
   }
   
   virtual std::string convert ()
@@ -970,6 +1146,11 @@ public:
   {
   }
   
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
   virtual std::string convert ()
   {
     return "[" + std::to_string (index) + "]";
@@ -991,6 +1172,11 @@ public:
   {
   }
   
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
   virtual std::string convert ()
   {
     return R"([\")" + keyName + R"(\"])";
@@ -1010,6 +1196,11 @@ private:
 public:
   Patterns () {}
   Patterns (std::vector<Pattern*>& _pats) : pats (_pats) {}
+  
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
   
   virtual std::string convert ()
   {
