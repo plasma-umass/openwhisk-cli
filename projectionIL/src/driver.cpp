@@ -154,7 +154,7 @@ void updateVersionNumberInSSA (IRNode* irNode, BasicBlock* basicBlock,
     Identifier* id;
     PHINodePair phiNodePairForID;
     std::unordered_set <BasicBlock*> visited;
-    id = dynamic_cast <Identifier*> (irNode);
+    id = (Identifier*) (irNode);
     allPredsDefiningID (basicBlock, id, bbVersionMap, phiNodePairForID,
                         visited);
     
@@ -171,7 +171,7 @@ void updateVersionNumberInSSA (IRNode* irNode, BasicBlock* basicBlock,
     id->setVersion (latestVersion (id->getID (), idVersions));
   } else if (dynamic_cast <PatternApplication*> (irNode) != nullptr) {
     PatternApplication* patapp = (PatternApplication*) irNode;
-    std::cout << patapp->getIdentifier ()->getID () << std::endl;
+    
     updateVersionNumberInSSA (patapp->getIdentifier (), basicBlock, idVersions,
                               bbVersionMap, phiNodePair);
   } else if (dynamic_cast <JSONObject*> (irNode) != nullptr) {
@@ -222,6 +222,7 @@ void updateVersionNumberInBB (BasicBlock* basicBlock,
     }
     
     visited.insert (basicBlock);
+    //std::cout << "updateVersionNumber: basicBlock " << basicBlock->getBasicBlockName () << std::endl;
     for (auto instr : basicBlock->getInstructions ()) {
       PHINodePair phiNodePair;
       if (dynamic_cast <Call*> (instr) != nullptr) {
@@ -279,9 +280,20 @@ void updateVersionNumberInBB (BasicBlock* basicBlock,
                                   idVersions, bbVersionMap, phiNodePair);
         updateVersionNumberInSSA (assign->getInput (), basicBlock, 
                                   idVersions, bbVersionMap, phiNodePair);
+      } else if (dynamic_cast <StorePointer*> (instr) != nullptr) {
+        StorePointer* str;
+        
+        str = (StorePointer*) instr;
+        updateVersionNumberInSSA (((Identifier*)str->getInputExpr ()), basicBlock, idVersions, bbVersionMap, phiNodePair);
+      } else if (dynamic_cast <LoadPointer*> (instr) != nullptr) {
+        LoadPointer* ld;
+        
+        ld = (LoadPointer*) instr;
+        ld->getRetVal ()->setVersion (updateVersionNumber (((Identifier*)ld->getRetVal ())->getID (),
+                                  idVersions, bbVersionMap[basicBlock]));
       } else {
-        //fprintf (stderr, "Type '%s' not implemented\n", typeid (instr).name());
-        //abort ();
+        fprintf (stderr, "Type '%s' not implemented\n", typeid (*instr).name());
+        abort ();
       }
     }
     
@@ -589,7 +601,6 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       
       //TODO: Make sure that for every load there is a store from every path coming
       //to this block
-      std::cout << "currBasicBlock " << currBasicBlock->getBasicBlockName () << " loopBody " << loopBody->getBasicBlockName () << std::endl;
       for (auto iter : loopBody->getReads ()) {
         LoadPointer* ld; 
         
@@ -600,7 +611,8 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
         StorePointer* str;
         
         if (!currBasicBlock->hasWrite (iter.first)) {
-          str = new StorePointer (iter.first, new Pointer (iter.first->getID ()));
+          str = new StorePointer (new Identifier (iter.first->getID ()), 
+                                  new Pointer (iter.first->getID ()));
           currBasicBlock->insertWrite (iter.first, str);
           currBasicBlock->appendInstruction (str);
         }
@@ -655,7 +667,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
         if (not found) {
           StorePointer* str;
         
-          str = new StorePointer (iter.first, new Pointer (iter.first->getID ()));
+          str = new StorePointer (new Identifier(iter.first->getID ()), new Pointer (iter.first->getID ()));
           currBasicBlock->insertWrite (iter.first, str);
           currBasicBlock->appendInstruction (str);
         }
@@ -734,11 +746,9 @@ void livenessAnalysis (Program* program)
       currBlock = queue.front ();
       queue.pop ();
 
-      std::cout << "currBlock " << currBlock->getBasicBlockName () << std::endl;
       for (auto block : currBlock->getSuccessors ()) {
         if (visited.count (block) == 1) 
           continue;
-        std::cout << "     block " << block->getBasicBlockName () << std::endl;
         visited.insert (block);
         levelQueue.push (block);
         
@@ -786,7 +796,7 @@ void jsonLivenessAnalysis (Program* program)
    
   UseDef useDef;
   UseDefVisitor visitor;
-  std::unordered_map <std::string, std::unordered_set<Pattern*>> idToPatterns;
+  std::unordered_map <std::string, std::vector<Pattern*>> idToPatterns;
   useDef = visitor.getAllUseDef (program);
   for (auto varAndDefs : useDef.getDefs ()) {
     std::string id = varAndDefs.first;
@@ -806,15 +816,38 @@ void jsonLivenessAnalysis (Program* program)
       //All the partial uses will come in Patterns and Pattern
       //are assigned through Assignment
       if (dynamic_cast <Assignment*> (use) != nullptr) {
+        Assignment* assign;
+        
+        assign = (Assignment*) use;
+        
         if (dynamic_cast <PatternApplication*> (((Assignment*)use)->getInput ()) != nullptr) {
           PatternApplication* patApp;
           
           patApp = (PatternApplication*)(((Assignment*)use)->getInput ());
           if (idToPatterns.count (id) == 0) {
-            idToPatterns[id] = std::unordered_set<Pattern*> ();
+            idToPatterns[id] = std::vector<Pattern*> ();
           }
           
-          idToPatterns[id].insert (patApp->getPattern ());
+          idToPatterns[id].push_back (patApp->getPattern ());
+          std::string nextId = assign->getOutput ()->getIDWithVersion ();
+          std::queue <std::string> nextIdQueue;
+          nextIdQueue.push (nextId);
+          while (nextIdQueue.empty () == false) {
+            nextId = nextIdQueue.front ();
+            nextIdQueue.pop ();
+            
+            for (auto nextIdUse : useDef.getUses ()[nextId]) {
+              if (dynamic_cast<Assignment*> (nextIdUse) != nullptr) {
+                if (dynamic_cast <PatternApplication*> (((Assignment*)nextIdUse)->getInput ()) != nullptr) {
+                  Assignment* a;
+                  
+                  a = (Assignment*)nextIdUse;
+                  nextIdQueue.push (a->getOutput ()->getIDWithVersion ());
+                  idToPatterns[id].push_back (((PatternApplication*)a->getInput ())->getPattern ());
+                }
+              }
+            }
+          }
         } else {
           //For everything else (like assignment of JSON Literal etc.) 
           //consider everything
@@ -830,21 +863,20 @@ void jsonLivenessAnalysis (Program* program)
     }
   }
   
-  std::cout << "ID TO PATTERNS : " << std::endl;
+  /*std::cout << "ID TO PATTERNS : " << std::endl;
   
   for (auto id : idToPatterns) {
     std::cout << id.first << ":" << std::endl;
     for (auto pattern : id.second) 
       pattern->print (std::cout);
     std::cout << std::endl;
-  }
-  
+  }*/
 }
 
 void optimize (Program* program)
 {
-  livenessAnalysis (program);
-  //jsonLivenessAnalysis (program);
+  //livenessAnalysis (program);
+  jsonLivenessAnalysis (program);
 }
 
 int main (int *argc, char** argv)
@@ -878,7 +910,7 @@ int main (int *argc, char** argv)
     program1 = convertToSSA (&cmds);
     optimize (program1);
     std::vector <WhiskSequence*> seqs;
-    WhiskProgram* p = (WhiskProgram*)program1->convert (seqs);
+    WhiskProgram* p = (WhiskProgram*)program1->convert (program1, seqs);
     p->generateCommand (std::cout);
     std::cout << std::endl;
   }
@@ -993,12 +1025,13 @@ int main (int *argc, char** argv)
     ComplexCommand cmd1(v);
     
     Program* program = convertToSSA (&cmd1);
+    optimize (program);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
     std::cout << std::endl;
     
     std::vector<WhiskSequence*> seqs;
-    WhiskAction * p = program->convert (seqs);
+    WhiskAction * p = program->convert (program, seqs);
     p->generateCommand (std::cout);
     
     //~ seqs[0]->print ();
@@ -1063,7 +1096,7 @@ int main (int *argc, char** argv)
     Program* program = convertToSSA (&cmd1);
     optimize (program);
     std::vector<WhiskSequence*> seqs;
-    program->convert (seqs);
+    program->convert (program, seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;
@@ -1100,7 +1133,7 @@ int main (int *argc, char** argv)
     Program* program = convertToSSA (&cmd1);
     optimize (program);
     std::vector<WhiskSequence*> seqs;
-    program->convert (seqs);
+    program->convert (program, seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;
@@ -1138,7 +1171,7 @@ int main (int *argc, char** argv)
     Program* program = convertToSSA (&cmd1);
     optimize (program);
     std::vector<WhiskSequence*> seqs;
-    program->convert (seqs);
+    program->convert (program, seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;

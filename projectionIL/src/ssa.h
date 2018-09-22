@@ -122,7 +122,7 @@ protected:
 public:
   virtual ~Instruction () {}
   virtual std::string getActionName () = 0;
-  virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection) = 0;
   virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection) = 0;
   virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg) = 0;
   
@@ -145,207 +145,6 @@ public:
   Instruction* getUseNodes () const {return useNodes;}
   Instruction* getDefNode () const {return defNode;}
 };*/
-
-class Call : public Instruction
-{
-protected:
-  Identifier* retVal;
-  ActionName actionName;
-  Identifier* arg;
-  std::string forkName;
-  std::string projName;
-  
-public:
-  Call (Identifier* _retVal, ActionName _actionName, Identifier* _arg) : 
-    Instruction(), retVal(_retVal), actionName (_actionName), arg(_arg) 
-  {
-    retVal->setCallStmt(this);
-    forkName = "Fork_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-    projName = "Proj_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-  }
-  
-  Identifier* getReturnValue() {return retVal;}
-  virtual std::string getActionName() {return actionName;}
-  Identifier* getArgument() {return arg;}
-  void setReturnValue (Identifier* ret) {retVal = ret;}
-  void setArgument (Identifier* _arg) {arg = _arg;}
-  
-  virtual std::string getForkName() 
-  {
-    return forkName;
-  }
-  
-  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
-  {
-    return new LLSPLProjForkPair (new LLSPLProjection (projName, R"(. * {\"input\": )"+arg->convert()+"}"),
-                                  new LLSPLFork (getForkName (), getActionName (), 
-                                  retVal->getIDWithVersion()));
-  }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    return new WhiskProjForkPair (new WhiskProjection (projName, R"(. * {\"input\": )"+arg->convert()+"}"),
-                                  new WhiskFork (getForkName (), getActionName (), 
-                                  retVal->getIDWithVersion()));
-  }
-  
-  std::string getProjName ()
-  {
-    return projName;
-  }
-  
-  virtual void print (std::ostream& os)
-  {
-    retVal->print (os);
-    os << " = " << actionName << "(";
-    arg->print (os);
-    os << ");" << std::endl;
-  }
-  
-  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
-  {
-    visitor->visit (this, arg);
-  }
-};
-
-class Pointer : public Expression
-{
-private:
-  std::string name;
-
-public:
-  Pointer (std::string _name) : name(_name) {}
-  
-  std::string getName () {return name;}
-  
-  virtual std::string convertToLLSPL () 
-  {
-    return convert ();
-  }
-  
-  virtual std::string convert () 
-  {
-    return ".saved."+name;
-  }
-  
-  virtual void print (std::ostream& os)
-  {
-    os << "*"<<name;
-  }
-  
-  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
-  {
-    visitor->visit (this, arg);
-  }
-};
-
-class LoadPointer : public Instruction
-{
-private:
-  Identifier* retVal;
-  Pointer* ptr;
-  std::string projName;
-  
-public:
-  LoadPointer (Identifier* _retVal, Pointer* _ptr) : retVal(_retVal), ptr(_ptr)
-  {
-    projName = "Proj_Load_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-  }
-  
-  Identifier* getRetVal () {return retVal;}
-  
-  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
-  {
-    std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
-    return new LLSPLProjection (projName,
-                                R"(. * {\"saved\":{\")"+retValID+ R"(\":)"+ptr->convert () + "}}");
-  }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-     std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
-     return new WhiskProjection (projName,
-                                 R"(. * {\"saved\":{\")"+retValID+ R"(\":)"+ptr->convert () + "}}");
-  }
-  
-  virtual void print (std::ostream& os)
-  {
-    retVal->print (os);
-    os << " = Load ";
-    ptr->print (os);
-    os << std::endl;
-  }
-  
-  virtual std::string getForkName() 
-  {
-    return retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
-    fprintf(stderr, "LoadPointer::getForkName() should not be called\n");
-    abort ();
-  }
-  
-  virtual std::string getActionName () 
-  {
-    return projName;
-  }
-  
-  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
-  {
-    visitor->visit (this, arg);
-  }
-};
-
-class StorePointer : public Instruction
-{
-private:
-  Expression* expr;
-  Pointer* ptr;
-  std::string projName;
-  
-public:
-  StorePointer (Expression* _expr, Pointer* _ptr) : expr(_expr), ptr(_ptr) 
-  {
-    projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
-  }
-  
-  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
-  {
-    std::string code;
-    
-    code = R"(. * { \"saved\" : {\" )" + ptr->getName () + R"(\":)" + expr->convert () + "}}";
-    
-    return new LLSPLProjection (projName, code);
-  }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    std::string code;
-    
-    code = R"(. * { \"saved\" : {\" )" + ptr->getName () + R"(\":)" + expr->convert () + "}}";
-    
-    return new WhiskProjection (projName, code);
-  }
-  
-  virtual void print (std::ostream& os)
-  {
-    os << "Store (";
-    expr->print (os);
-    os << ", ";
-    ptr->print (os);
-    os << ");" << std::endl;
-  }
-  
-  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
-  {
-    visitor->visit (this, arg);
-  }
-  
-  Expression* getInputExpr ()
-  {
-    return expr;
-  }
-  
-  virtual std::string getActionName () {return "Store_ptr";}
-};
 
 class BasicBlock : public Instruction
 {
@@ -452,7 +251,7 @@ public:
     return seq;
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
     std::vector<WhiskAction*> actions;
     if (converted) {
@@ -466,7 +265,7 @@ public:
     
     for (auto cmd : cmds) {
       WhiskAction* act;
-      act = cmd->convert (basicBlockCollection);
+      act = cmd->convert (program, basicBlockCollection);
       seq->appendAction (act);
     }
     
@@ -525,9 +324,9 @@ public:
                              basicBlockCollection);
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
-    basicBlocks[0]->convert (basicBlockCollection);
+    basicBlocks[0]->convert (program, basicBlockCollection);
     
     return new WhiskProgram ("Program_"+gen_random_str(WHISK_SEQ_NAME_LENGTH), 
                              basicBlockCollection);
@@ -544,6 +343,207 @@ public:
   {
     visitor->visit (this, arg);
   }
+};
+
+class Call : public Instruction
+{
+protected:
+  Identifier* retVal;
+  ActionName actionName;
+  Identifier* arg;
+  std::string forkName;
+  std::string projName;
+  
+public:
+  Call (Identifier* _retVal, ActionName _actionName, Identifier* _arg) : 
+    Instruction(), retVal(_retVal), actionName (_actionName), arg(_arg) 
+  {
+    retVal->setCallStmt(this);
+    forkName = "Fork_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+    projName = "Proj_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+  }
+  
+  Identifier* getReturnValue() {return retVal;}
+  virtual std::string getActionName() {return actionName;}
+  Identifier* getArgument() {return arg;}
+  void setReturnValue (Identifier* ret) {retVal = ret;}
+  void setArgument (Identifier* _arg) {arg = _arg;}
+  
+  virtual std::string getForkName() 
+  {
+    return forkName;
+  }
+  
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    return new LLSPLProjForkPair (new LLSPLProjection (projName, R"(. * {\"input\": )"+arg->convert()+"}"),
+                                  new LLSPLFork (getForkName (), getActionName (), 
+                                  retVal->getIDWithVersion()));
+  }
+  
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+    return new WhiskProjForkPair (new WhiskProjection (projName, R"(. * {\"input\": )"+arg->convert()+"}"),
+                                  new WhiskFork (getForkName (), getActionName (), 
+                                  retVal->getIDWithVersion()));
+  }
+  
+  std::string getProjName ()
+  {
+    return projName;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    retVal->print (os);
+    os << " = " << actionName << "(";
+    arg->print (os);
+    os << ");" << std::endl;
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
+};
+
+class Pointer : public Expression
+{
+private:
+  std::string name;
+
+public:
+  Pointer (std::string _name) : name(_name) {}
+  
+  std::string getName () {return name;}
+  
+  virtual std::string convertToLLSPL () 
+  {
+    return convert ();
+  }
+  
+  virtual std::string convert () 
+  {
+    return ".saved."+name;
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "*"<<name;
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
+};
+
+class LoadPointer : public Instruction
+{
+private:
+  Identifier* retVal;
+  Pointer* ptr;
+  std::string projName;
+  
+public:
+  LoadPointer (Identifier* _retVal, Pointer* _ptr) : retVal(_retVal), ptr(_ptr)
+  {
+    projName = "Proj_Load_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
+  }
+  
+  Identifier* getRetVal () {return retVal;}
+  
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
+    return new LLSPLProjection (projName,
+                                R"(. * {\"saved\":{\")"+retValID+ R"(\":)"+ptr->convert () + "}}");
+  }
+  
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+     std::string retValID = retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
+     return new WhiskProjection (projName,
+                                 R"(. * {\"saved\":{\")"+retValID+ R"(\":)"+ptr->convert () + "}}");
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    retVal->print (os);
+    os << " = Load ";
+    ptr->print (os);
+    os << std::endl;
+  }
+  
+  virtual std::string getForkName() 
+  {
+    return retVal->getID ()+"_"+std::to_string (retVal->getVersion ());
+    fprintf(stderr, "LoadPointer::getForkName() should not be called\n");
+    abort ();
+  }
+  
+  virtual std::string getActionName () 
+  {
+    return projName;
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
+};
+
+class StorePointer : public Instruction
+{
+private:
+  Expression* expr;
+  Pointer* ptr;
+  std::string projName;
+  
+public:
+  StorePointer (Expression* _expr, Pointer* _ptr) : expr(_expr), ptr(_ptr) 
+  {
+    projName = "Proj_StorePtr_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
+  }
+  
+  virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
+  {
+    std::string code;
+    
+    code = R"(. * { \"saved\" : {\" )" + ptr->getName () + R"(\":)" + expr->convert () + "}}";
+    
+    return new LLSPLProjection (projName, code);
+  }
+  
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
+  {
+    std::string code;
+    
+    code = R"(. * { \"saved\" : {\" )" + ptr->getName () + R"(\":)" + expr->convert () + "}}";
+    
+    return new WhiskProjection (projName, code);
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "Store (";
+    expr->print (os);
+    os << ", ";
+    ptr->print (os);
+    os << ");" << std::endl;
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
+  
+  Expression* getInputExpr ()
+  {
+    return expr;
+  }
+  
+  virtual std::string getActionName () {return "Store_ptr";}
 };
 
 class Return : public Instruction
@@ -565,7 +565,7 @@ public:
                                 getReturnExpr ()->convert ());
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
     return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
                                 getReturnExpr ()->convert ());
@@ -605,7 +605,7 @@ public:
     return new LLSPLProjection (name, code);
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
     std::string code;
     
@@ -660,7 +660,7 @@ public:
     return new LLSPLProjection (name, code);
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
     std::string code;
     
@@ -703,7 +703,7 @@ public:
     return nullptr;
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
     abort ();
     return nullptr;
@@ -834,7 +834,7 @@ public:
     return new LLSPLIf ("If_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), cond, thenAction, elseAction);
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
     WhiskAction* proj;
     WhiskSequence* thenSeq;
@@ -843,8 +843,8 @@ public:
     std::string code;
     
     code = expr->convert ();
-    thenSeq = dynamic_cast <WhiskSequence*> (thenBranch->convert(basicBlockCollection));
-    elseSeq = dynamic_cast <WhiskSequence*> (elseBranch->convert(basicBlockCollection));
+    thenSeq = dynamic_cast <WhiskSequence*> (thenBranch->convert(program, basicBlockCollection));
+    elseSeq = dynamic_cast <WhiskSequence*> (elseBranch->convert(program, basicBlockCollection));
     code = "if ("+code+R"() then (. * {\"action\": \")" + thenSeq->getName () + 
       R"(\"}) else (. * {\"action\":\")" + elseSeq->getName () + R"(\"}))";
     proj = new WhiskProjection ("Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH),
@@ -917,7 +917,7 @@ public:
     return new LLSPLProjection (projName, _finalString);
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection) 
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection) 
   {
     std::string _finalString;
     int i;
@@ -985,9 +985,9 @@ public:
     return new LLSPLDirectBranch (target->getActionName ());
   }
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
+  virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
-    target->convert (basicBlockCollection);
+    target->convert (program, basicBlockCollection);
     return new WhiskDirectBranch (target->getActionName ());
   }
   
