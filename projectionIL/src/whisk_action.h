@@ -7,7 +7,7 @@
 #ifndef __WHISK_ACTION_H__
 #define __WHISK_ACTION_H__
 
-#define WHISK_CLI_PATH "./wsk"
+#define WHISK_CLI_PATH "wsk"
 #define WHISK_CLI_ARGS "-i"
 #define ECHO(x) (std::string("echo \"")+x+"\"")
 enum
@@ -18,7 +18,6 @@ enum
 };
 
 typedef ServerlessAction WhiskAction;
-typedef ServerlessAction LLSPLAction;
 
 class WhiskSequence : public ServerlessSequence
 {
@@ -29,6 +28,18 @@ public:
   
   WhiskSequence(std::string name, std::vector<ServerlessAction*> _actions) : ServerlessSequence(name, _actions)
   {
+  }
+  
+  virtual void print ()
+  {
+    fprintf (stdout, "(WhiskSequence %s, %ld, (", getName (), actions.size ());
+    
+    for (auto action : actions) {
+      action->print ();
+      fprintf (stdout, " -> ");
+    } 
+    
+    fprintf (stdout, "))\n");
   }
   
   virtual void generateCommand(std::ostream& os)
@@ -48,8 +59,6 @@ public:
   }
 };
 
-typedef WhiskSequence LLSPLSequence;
-
 class WhiskProjection : public ServerlessProjection
 {
 public:
@@ -66,8 +75,6 @@ public:
     os << WHISK_CLI_PATH << " " << WHISK_CLI_ARGS << " action update " << getName () << " --projection " << temp << "\n";
   }
 };
-
-typedef WhiskProjection LLSPLProjection;
 
 class WhiskFork : public ServerlessFork
 {
@@ -95,8 +102,6 @@ public:
        resultProjectionName << " --projection " << temp << std::endl;
   }
 };
-
-typedef WhiskFork LLSPLFork;
 
 class WhiskProjForkPair : public ServerlessAction
 {
@@ -127,8 +132,6 @@ public:
   virtual std::string getNameForSeq () {return proj->getName () + std::string(",") + fork->getName () + "," + fork->getResultProjectionName();}
 };
 
-typedef WhiskProjForkPair LLSPLProjForkPair;
-
 typedef ServerlessApp WhiskApp;
 
 class WhiskDirectBranch : public ServerlessApp
@@ -158,8 +161,6 @@ public:
   
   virtual std::string getNameForSeq () {return std::string(proj->getName ());}
 };
-
-typedef WhiskDirectBranch LLSPLDirectBranch;
 
 class WhiskProgram : public ServerlessProgram 
 {
@@ -202,6 +203,4 @@ public:
     fprintf (stdout, "))\n");
   }
 };
-
-typedef WhiskProgram LLSPLProgram;
 #endif

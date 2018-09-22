@@ -42,18 +42,6 @@ public:
   std::vector<ServerlessAction*>& getActions () {return actions;}
   void appendAction (ServerlessAction* action) {actions.push_back (action);}
   void insertAction (ServerlessAction* action, int index) {actions.insert (actions.begin()+index, action);}
-  
-  virtual void print ()
-  {
-    fprintf (stdout, "(WhiskSequence %s, %ld, (", getName (), actions.size ());
-    
-    for (auto action : actions) {
-      action->print ();
-      fprintf (stdout, " -> ");
-    } 
-    
-    fprintf (stdout, "))\n");
-  }
 };
 
 class ServerlessProjection : public ServerlessAction
@@ -147,7 +135,5 @@ public:
     basicBlocks.push_back (block);
   }
 };
-
-
 
 #endif

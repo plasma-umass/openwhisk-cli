@@ -584,24 +584,36 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       testBB = new BasicBlock ();
       basicBlocks.push_back (testBB);
       loopBody = convertToBasicBlock (&loop->getBody (), basicBlocks, 
-                                      idVersions, bbVersionMap, &innerExitBlock);
+                                      idVersions, bbVersionMap, 
+                                      &innerExitBlock);
       
       //TODO: Make sure that for every load there is a store from every path coming
       //to this block
+      std::cout << "currBasicBlock " << currBasicBlock->getBasicBlockName () << " loopBody " << loopBody->getBasicBlockName () << std::endl;
       for (auto iter : loopBody->getReads ()) {
-        LoadPointer* ld;
+        LoadPointer* ld; 
         
         ld = new LoadPointer (iter.first, new Pointer (iter.first->getID ()));
         loopBody->insertRead (iter.first, ld);
         loopBody->prependInstruction (ld);
+        //Add a store for all the loopBody reads in the currBasicBlock
+        StorePointer* str;
+        
+        if (!currBasicBlock->hasWrite (iter.first)) {
+          str = new StorePointer (iter.first, new Pointer (iter.first->getID ()));
+          currBasicBlock->insertWrite (iter.first, str);
+          currBasicBlock->appendInstruction (str);
+        }
       }
       
       for (auto iter : loopBody->getWrites ()) {
         StorePointer* str;
         
-        str = new StorePointer (iter.first, new Pointer (iter.first->getID ()));
-        loopBody->insertWrite (iter.first, str);
-        loopBody->appendInstruction (str);
+        if (!loopBody->hasWrite (iter.first)) {
+          str = new StorePointer (iter.first, new Pointer (iter.first->getID ()));
+          loopBody->insertWrite (iter.first, str);
+          loopBody->appendInstruction (str);
+        }
       }
       
       loopExit = new BasicBlock ();
@@ -614,12 +626,10 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
         innerExitBlock->appendInstruction (new BackwardBranch (testBB, innerExitBlock)); 
       else
         loopBody->appendInstruction (new BackwardBranch (testBB, loopBody)); 
-      //testBB will have currBasicBlock as one of its predecessors
-      currBasicBlock->appendInstruction (new DirectBranch (testBB, 
-                                                           currBasicBlock));
+      
       cond = convertToSSAIR (loop->getCondition (),
-                                           testBB, idVersions,
-                                           bbVersionMap);
+                             testBB, idVersions,
+                             bbVersionMap);
       assert (dynamic_cast <Conditional*> (cond) != nullptr);
       for (auto iter : testBB->getReads ()) {
         LoadPointer* ptr;
@@ -627,7 +637,34 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
         ptr = new LoadPointer (iter.first, new Pointer (iter.first->getID()));
         testBB->insertRead (iter.first, ptr);
         testBB->prependInstruction (ptr);
+        
+        
+        //All the variables used in test condition but not read/write
+        // in/to in loopBody also have to be stored.
+
+        bool found = false;        
+        //TODO: Change this map of reads and writes from Identifier to 
+        //std::string
+        for (auto iter2 : loopBody->getReads()) {
+          if (iter2.first->getID () == iter.first->getID ()) {
+            found = true;
+            break;
+          }
+        }
+        
+        if (not found) {
+          StorePointer* str;
+        
+          str = new StorePointer (iter.first, new Pointer (iter.first->getID ()));
+          currBasicBlock->insertWrite (iter.first, str);
+          currBasicBlock->appendInstruction (str);
+        }
       }
+      
+      //testBB will have currBasicBlock as one of its predecessors
+      currBasicBlock->appendInstruction (new DirectBranch (testBB, 
+                                                           currBasicBlock));
+      
       
       assert (testBB->getWrites ().size () == 0);
       condBr = new ConditionalBranch ((Conditional*)cond, loopBody, loopExit, testBB);
@@ -666,9 +703,187 @@ Program* convertToSSA (ComplexCommand* cmd)
   return new Program (basicBlocks);
 }
 
-int main ()
+void livenessAnalysis (Program* program) 
 {
-  //test0
+  /* Find the last Instruction (s) (and the BasicBlock (s)), where an Identifier
+   * is used. We will emit a projection to delete that identifier from the
+   * saved state.
+   * */
+  //Map of Identifier to BasicBlock to Instruction, where Identifier is used for last time.
+  std::unordered_map <std::string, std::unordered_map <BasicBlock*, Instruction*>>  idToLastDef;
+  std::unordered_set <BasicBlock*> visited;
+  BasicBlock* firstBasicBlock;
+  std::queue <BasicBlock*> queue;
+  BasicBlock dummyFirstBlock;
+  firstBasicBlock = program->getBasicBlocks ()[0];
+  dummyFirstBlock.appendSuccessor (firstBasicBlock);
+  
+  queue.push (&dummyFirstBlock);
+  
+  while (queue.empty () == false) {
+    /* A level search, where for each identifier we determine the basic blocks
+     * (and instructions) where that variable is used. We find the last
+     * instruction in each basic block, where that variable is used.
+     * */
+    BasicBlock* currBlock;
+    std::unordered_map <std::string, std::unordered_map <BasicBlock*, Instruction*>> strToLastDefs;
+    int queueSize = queue.size ();
+    int levelIter = 0;
+    std::queue<BasicBlock*> levelQueue;
+    while (levelIter < queueSize) {
+      currBlock = queue.front ();
+      queue.pop ();
+
+      std::cout << "currBlock " << currBlock->getBasicBlockName () << std::endl;
+      for (auto block : currBlock->getSuccessors ()) {
+        if (visited.count (block) == 1) 
+          continue;
+        std::cout << "     block " << block->getBasicBlockName () << std::endl;
+        visited.insert (block);
+        levelQueue.push (block);
+        
+        for (auto instrIter = block->getInstructions ().begin ();
+             instrIter != block->getInstructions ().end (); ++instrIter) {
+          
+          Instruction* instr = *instrIter;
+          UseDef useDef;
+          UseDefVisitor visitor;
+          
+          useDef = visitor.getAllUseDef (instr);
+          for (auto varAndUses : useDef.getUses ()) {
+            std::string strID = varAndUses.first;
+            if (strToLastDefs.count (strID) == 0) {
+              strToLastDefs[strID] = std::unordered_map <BasicBlock*, Instruction*> ();
+            } 
+            
+            strToLastDefs[strID][block] = instr;
+          }        
+        }
+      }
+      
+      levelIter++;
+    }
+
+    while (levelQueue.empty () == false) {
+      queue.push (levelQueue.front ());
+      levelQueue.pop ();
+    }
+    
+    //Update the global data structure from the local information.
+    for (auto strToDef : strToLastDefs) {
+      idToLastDef [strToDef.first] = strToDef.second;
+    }
+  }
+}
+
+void jsonLivenessAnalysis (Program* program)
+{
+  /* This analysis is like live analysis but works at the json key/value
+   * pairs instead of variables. Find if there are only specific 
+   * keys of a json returned from call is used and save only those keys in
+   * the state variable.
+   */
+   
+  UseDef useDef;
+  UseDefVisitor visitor;
+  std::unordered_map <std::string, std::unordered_set<Pattern*>> idToPatterns;
+  useDef = visitor.getAllUseDef (program);
+  for (auto varAndDefs : useDef.getDefs ()) {
+    std::string id = varAndDefs.first;
+    Instruction* def = varAndDefs.second;
+    
+    //Consider only those defs which are from call instructions.
+    if (dynamic_cast<Call*> (def) == nullptr) {
+      continue;
+    }
+    
+    std::unordered_set<Instruction*> uses;
+    uses = useDef.getUses () [id];
+    std::cout << "uses for " << id << " are " << uses.size () << std::endl;
+    for (auto use : uses) {
+      //If any of these uses, use full identifier then we cannot consider
+      //this identifier.
+      //All the partial uses will come in Patterns and Pattern
+      //are assigned through Assignment
+      if (dynamic_cast <Assignment*> (use) != nullptr) {
+        if (dynamic_cast <PatternApplication*> (((Assignment*)use)->getInput ()) != nullptr) {
+          PatternApplication* patApp;
+          
+          patApp = (PatternApplication*)(((Assignment*)use)->getInput ());
+          if (idToPatterns.count (id) == 0) {
+            idToPatterns[id] = std::unordered_set<Pattern*> ();
+          }
+          
+          idToPatterns[id].insert (patApp->getPattern ());
+        } else {
+          //For everything else (like assignment of JSON Literal etc.) 
+          //consider everything
+          idToPatterns.erase (id);
+        }
+      } else if (dynamic_cast <Call*> (use) != nullptr) {
+        idToPatterns.erase (id);
+      } else if (dynamic_cast <ConditionalBranch*> (use) != nullptr) {
+        idToPatterns.erase (id);
+      } else {
+        std::cout << __FILE__ << ":" << __LINE__ << ":" << "Didn't consider this case " << typeid (*use).name () << std::endl;
+      }
+    }
+  }
+  
+  std::cout << "ID TO PATTERNS : " << std::endl;
+  
+  for (auto id : idToPatterns) {
+    std::cout << id.first << ":" << std::endl;
+    for (auto pattern : id.second) 
+      pattern->print (std::cout);
+    std::cout << std::endl;
+  }
+  
+}
+
+void optimize (Program* program)
+{
+  livenessAnalysis (program);
+  //jsonLivenessAnalysis (program);
+}
+
+int main (int *argc, char** argv)
+{
+  //Sequence of 10
+  Program* program1;
+  {
+    ComplexCommand cmds;
+    JSONInput input;
+    JSONIdentifier X1 ("X1");
+    Action A1 ("infiniteLoop1");
+    Action A2 ("infiniteLoop2");
+    Action A3 ("infiniteLoop3");
+    Action A4 ("infiniteLoop4");
+    Action A5 ("infiniteLoop5");
+    Action A6 ("infiniteLoop6");
+    Action A7 ("infiniteLoop7");
+    Action A8 ("infiniteLoop8");
+    Action A9 ("infiniteLoop9");
+    Action A10 ("infiniteLoop10");
+    cmds (A1 (&X1, &input));
+    cmds (A2 (&X1, &X1));
+    cmds (A3 (&X1, &X1));
+    cmds (A4 (&X1, &X1));
+    cmds (A5 (&X1, &X1));
+    cmds (A6 (&X1, &X1));
+    cmds (A7 (&X1, &X1));
+    cmds (A8 (&X1, &X1));
+    cmds (A9 (&X1, &X1));
+    cmds (A10 (&X1, &X1));
+    program1 = convertToSSA (&cmds);
+    optimize (program1);
+    std::vector <WhiskSequence*> seqs;
+    WhiskProgram* p = (WhiskProgram*)program1->convert (seqs);
+    p->generateCommand (std::cout);
+    std::cout << std::endl;
+  }
+  
+  //test0  
   {
     ComplexCommand cmds;
     JSONInput input;
@@ -686,10 +901,11 @@ int main ()
     //~ifthen.else()
     ifthen.getElseBranch() (A2 (&X4, &X2));
     Program* program = convertToSSA (&cmds);
+    optimize (program);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
-    std::vector<WhiskSequence*> seqs;
-    WhiskProgram* p = (WhiskProgram*)program->convert (seqs);
+    std::vector<LLSPLSequence*> seqs;
+    LLSPLProgram* p = (LLSPLProgram*)program->convertToLLSPL (seqs);
     p->generateCommand (std::cout);
     //~ seqs[0]->print ();
     std::cout << std::endl;
@@ -710,14 +926,16 @@ int main ()
     ComplexCommand allCmds(v);
     
     Program* program = convertToSSA (&allCmds);
+    optimize (program);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
-    std::vector<WhiskSequence*> seqs;
-    WhiskProgram* p = (WhiskProgram*)program->convert (seqs);
+    std::vector<LLSPLSequence*> seqs;
+    LLSPLProgram* p = (LLSPLProgram*)program->convertToLLSPL (seqs);
     p->generateCommand (std::cout);
     //~ seqs[0]->print ();
     std::cout << std::endl;
   }
+  
   //~ //test2
   identifiers.clear ();
    {
@@ -740,12 +958,13 @@ int main ()
     ComplexCommand cmd1(v);
     
     Program* program = convertToSSA (&cmd1);
+    optimize (program);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
     std::cout << std::endl;
     
-    std::vector<WhiskSequence*> seqs;
-    WhiskAction * p = program->convert (seqs);
+    std::vector<LLSPLSequence*> seqs;
+    LLSPLAction * p = program->convertToLLSPL (seqs);
     p->generateCommand (std::cout);
     
     //~ seqs[0]->print ();
@@ -841,9 +1060,10 @@ int main ()
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);
     
-    Program* firstBlock = convertToSSA (&cmd1);
+    Program* program = convertToSSA (&cmd1);
+    optimize (program);
     std::vector<WhiskSequence*> seqs;
-    firstBlock->convert (seqs);
+    program->convert (seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;
@@ -877,9 +1097,10 @@ int main ()
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);
     
-    Program* firstBlock = convertToSSA (&cmd1);
+    Program* program = convertToSSA (&cmd1);
+    optimize (program);
     std::vector<WhiskSequence*> seqs;
-    firstBlock->convert (seqs);
+    program->convert (seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;
@@ -914,9 +1135,10 @@ int main ()
     cmd1.appendSimpleCommand (&A1);
     cmd1.appendSimpleCommand (&loop);
     
-    Program* firstBlock = convertToSSA (&cmd1);
+    Program* program = convertToSSA (&cmd1);
+    optimize (program);
     std::vector<WhiskSequence*> seqs;
-    firstBlock->convert (seqs);
+    program->convert (seqs);
     for (auto seq : seqs) {
         seq->generateCommand (std::cout);
         std::cout << std::endl;

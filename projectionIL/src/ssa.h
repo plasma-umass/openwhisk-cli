@@ -9,15 +9,48 @@
 #include "whisk_action.h"
 #include "utils.h"
 #include "ast.h"
+#include "llspl.h"
 
 #ifndef __SSA_H__
 #define __SSA_H__
 
 typedef std::string ActionName;
-
+class IRNode;
+class Expression;
+class Identifier;
+class Array;
+class ArrayIndexPattern;
+class Assignment;
+class BackwardBranch;
+class BasicBlock;
+class Boolean;
 class Call;
+class Conditional;
+class ConditionalBranch;
+class Constant;
+class DirectBranch;
+class Expression;
+class FieldGetPattern;
+class Input;
+class Instruction;
+class JSONKeyValuePair;
+class JSONObject;
+class KeyGetPattern;
+class Let;
 class LoadPointer;
+class Number;
+class PHI;
+class Pattern;
+class PatternApplication;
+class Patterns;
+class Pointer;
+class Program;
+class Return;
 class StorePointer;
+class String;
+class Transformation;
+
+#include "ssaVisitor.h"
 
 class IRNode
 {
@@ -25,6 +58,7 @@ protected:
   IRNode () {}
 public:
   virtual void print (std::ostream& os) = 0;
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg) = 0;
   virtual ~IRNode () {}
 };
 
@@ -33,6 +67,7 @@ class Expression : public IRNode
 public:
   virtual std::string convert () = 0;
   virtual std::string convertToLLSPL () = 0;
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg) = 0;
 };
 
 class Identifier : public Expression
@@ -72,18 +107,44 @@ public:
   {
     os << identifier+"_"+std::to_string(version);
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class Instruction : public IRNode
 {
 protected:
   Instruction () {}
+  
 public:
   virtual ~Instruction () {}
   virtual std::string getActionName () = 0;
   virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
   virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection) = 0;
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg) = 0;
+  
 };
+
+/*class UseDef 
+{
+private:
+  Identifier* variable;
+  std::vector<Instruction*> useNodes;
+  Instruction* defNode;
+  
+public:
+  UseDef (Identifier* var, std::vector<Instruction*> uses, Instruction* def) :
+    variable(var), useNodes(use), defNode(def)
+  {
+  }
+  
+  Identifier* getVariable () const {return variable;}
+  Instruction* getUseNodes () const {return useNodes;}
+  Instruction* getDefNode () const {return defNode;}
+};*/
 
 class Call : public Instruction
 {
@@ -140,6 +201,11 @@ public:
     arg->print (os);
     os << ");" << std::endl;
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class Pointer : public Expression
@@ -166,6 +232,11 @@ public:
   {
     os << "*"<<name;
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class LoadPointer : public Instruction
@@ -180,6 +251,8 @@ public:
   {
     projName = "Proj_Load_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
   }
+  
+  Identifier* getRetVal () {return retVal;}
   
   virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
   {
@@ -213,6 +286,11 @@ public:
   virtual std::string getActionName () 
   {
     return projName;
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -256,6 +334,16 @@ public:
     os << ");" << std::endl;
   }
   
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
+  
+  Expression* getInputExpr ()
+  {
+    return expr;
+  }
+  
   virtual std::string getActionName () {return "Store_ptr";}
 };
 
@@ -265,12 +353,13 @@ protected:
   std::vector<Instruction*> cmds;
   std::string actionName;
   bool converted;
-  WhiskSequence* seq;
+  ServerlessSequence* seq;
   std::string basicBlockName;
   std::vector <BasicBlock*> predecessors;
   std::vector <BasicBlock*> successors;
   std::unordered_map <Identifier*, LoadPointer*> reads;
   std::unordered_map <Identifier*, StorePointer*> writes;
+  //std::unordered_map <Identifier*, UseDef*> useDef;
   
 public:
   static int numberOfBasicBlocks;
@@ -292,6 +381,20 @@ public:
     numberOfBasicBlocks++;
   }
   
+  bool hasWrite (Identifier* v)
+  {
+    for (auto iter : writes) {
+      if (iter.first->getID () == v->getID ()) {
+        if (iter.second == nullptr) 
+          return false;
+        return true;
+      }
+        
+    }
+    
+    return false;
+  }
+  
   void insertRead (Identifier* v, LoadPointer* ptr) {reads[v] = ptr;}
   void insertWrite (Identifier* v, StorePointer* ptr) {writes[v] = ptr;}
   void insertRead (Identifier* v) {reads[v] = nullptr;}
@@ -301,11 +404,13 @@ public:
   
   void appendInstruction (Instruction* c)
   {
+    if (c == nullptr) abort();
     cmds.push_back(c);
   }
   
   void prependInstruction (Instruction* c)
   {
+    if (c == nullptr) abort();
     cmds.insert(cmds.begin(), c);
   }
   
@@ -327,18 +432,20 @@ public:
   {
     std::vector<LLSPLAction*> actions;
     if (converted) {
-      return seq;
+      return (LLSPLSequence*)seq;
     }
      
     converted = true;
     
     seq = new LLSPLSequence (getActionName ());
-    basicBlockCollection.push_back (seq);
+    basicBlockCollection.push_back ((LLSPLSequence*)seq);
     
     for (auto cmd : cmds) {
       LLSPLAction* act;
-      act = cmd->convert (basicBlockCollection);
-      seq->appendAction (act);
+      act = cmd->convertToLLSPL (basicBlockCollection);
+      if (act != nullptr) {
+        seq->appendAction (act);
+      }
     }
     
     
@@ -349,13 +456,13 @@ public:
   {
     std::vector<WhiskAction*> actions;
     if (converted) {
-      return seq;
+      return (WhiskSequence*)seq;
     }
      
     converted = true;
     
     seq = new WhiskSequence (getActionName ());
-    basicBlockCollection.push_back (seq);
+    basicBlockCollection.push_back ((WhiskSequence*)seq);
     
     for (auto cmd : cmds) {
       WhiskAction* act;
@@ -381,6 +488,11 @@ public:
       cmd->print (os);
     }
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class Program : public IRNode
@@ -400,9 +512,14 @@ public:
     basicBlocks.push_back (basicBlock);
   }
   
+  std::vector <BasicBlock*>& getBasicBlocks ()
+  {
+    return basicBlocks;
+  }
+  
   virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
   {
-    basicBlocks[0]->convert (basicBlockCollection);
+    basicBlocks[0]->convertToLLSPL (basicBlockCollection);
     
     return new LLSPLProgram ("Program_"+gen_random_str(WHISK_SEQ_NAME_LENGTH), 
                              basicBlockCollection);
@@ -421,6 +538,11 @@ public:
     for (auto block : basicBlocks) {
       block->print (os);
     }
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -447,6 +569,11 @@ public:
   {
     return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
                                 getReturnExpr ()->convert ());
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -501,6 +628,11 @@ public:
     in->print (os);
     os << ")" << std::endl; 
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class Assignment : public Instruction
@@ -547,7 +679,12 @@ public:
     os << " = " ;
     os << "(";
     in->print (os);
-    os << ")" << std::endl; 
+    os << ")" << std::endl;
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -570,6 +707,11 @@ public:
   {
     abort ();
     return nullptr;
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -606,6 +748,11 @@ public:
     printConditionalOperator (os, op);
     os << " ";
     op2->print (os);
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -676,10 +823,15 @@ public:
   
   virtual LLSPLAction* convertToLLSPL(std::vector<LLSPLSequence*>& basicBlockCollection)
   {
-    std::cout << "Use LLSPL's if"<<std::endl;
-    abort ();
+    std::string cond;
+    LLSPLAction* thenAction;
+    LLSPLAction* elseAction;
     
-    return nullptr;
+    cond = expr->convertToLLSPL ();
+    thenAction = thenBranch->convertToLLSPL (basicBlockCollection);
+    elseAction = elseBranch->convertToLLSPL (basicBlockCollection);
+    
+    return new LLSPLIf ("If_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), cond, thenAction, elseAction);
   }
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
@@ -714,6 +866,11 @@ public:
     //thenBranch->print (os);
     //elseBranch->print (os);
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class PHI : public Instruction
@@ -735,6 +892,8 @@ public:
   {
     return commandExprVector;
   }
+  
+  Identifier* getOutput () {return output;}
   
   virtual LLSPLAction* convertToLLSPL(std::vector<LLSPLSequence*>& basicBlockCollection)
   {
@@ -799,6 +958,11 @@ public:
     }
     os << "]"<<std::endl;
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class DirectBranch : public Instruction 
@@ -816,7 +980,8 @@ public:
   
   virtual LLSPLAction* convertToLLSPL(std::vector<LLSPLSequence*>& basicBlockCollection)
   {
-    target->convert (basicBlockCollection);
+    target->convertToLLSPL (basicBlockCollection);
+    return nullptr;
     return new LLSPLDirectBranch (target->getActionName ());
   }
   
@@ -839,6 +1004,11 @@ public:
     os << "goto " << target->getBasicBlockName () << std::endl;
     //target->print (os);
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class BackwardBranch : public DirectBranch
@@ -850,6 +1020,11 @@ public:
   {
     os << "loop " << target->getBasicBlockName () << std::endl;
     //target->print (os);
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -881,6 +1056,11 @@ public:
   {
     os << number;
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class String : public Constant
@@ -906,6 +1086,11 @@ public:
   virtual void print (std::ostream& os) 
   {
     os << R"(\")" << str << R"(\")";
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -941,6 +1126,11 @@ public:
     else
       os << "False";
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class Array : public Expression
@@ -958,6 +1148,8 @@ public:
     return convert ();
   }
   
+  std::vector<Expression*> getExpressions () const {return exprs;}
+  
   virtual std::string convert ()
   {
     std::string to_ret;
@@ -969,6 +1161,11 @@ public:
     }
     
     to_ret = "]";
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -1000,6 +1197,11 @@ public:
   virtual std::string convert ()
   {
     return R"(\")" + getKey () + R"(\":)" + getValue ()->convert ();
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -1051,6 +1253,11 @@ public:
     }
     os << "}";
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class Input : public Identifier 
@@ -1066,6 +1273,11 @@ public:
   std::string convert ()
   {    
     return ".saved.input";
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -1108,6 +1320,11 @@ public:
     
     return id + pat;
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class FieldGetPattern : public Pattern
@@ -1133,6 +1350,11 @@ public:
   virtual void print (std::ostream& os) 
   {
     os << "." << fieldName;
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -1160,6 +1382,11 @@ public:
   {
     os << "[" << index << "]";
   }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
+  }
 };
 
 class KeyGetPattern : public Pattern
@@ -1185,6 +1412,11 @@ public:
   virtual void print (std::ostream& os) 
   {
     os << R"([\")" << keyName << R"(\"])";
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
@@ -1217,6 +1449,11 @@ public:
     for (auto pat : pats) {
       pat->print (os);
     }
+  }
+  
+  virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
+  {
+    visitor->visit (this, arg);
   }
 };
 
