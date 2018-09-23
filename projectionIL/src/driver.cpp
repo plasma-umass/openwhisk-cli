@@ -929,7 +929,7 @@ void jsonLivenessAnalysis (Program* program)
 
 void optimize (Program* program)
 {
-  //livenessAnalysis (program);
+  livenessAnalysis (program);
   jsonLivenessAnalysis (program);
 }
 
@@ -979,7 +979,7 @@ int main (int *argc, char** argv)
     //auto pq = X1[0]["x"];
     //auto qq = pq;
     cmds (new JSONAssignment (&X2, &X1["x"]["y"]["z"]));
-    cmds (new JSONAssignment (&X3, &X1["a"]["b"]["c"]));
+    cmds (new JSONAssignment (&X3, &X1["x"]["y"]["c"]));
     cmds (A1 (&X2, &X2));
     cmds (new JSONAssignment (&X5, &X2["X2_a"]["X2_b"]["X2_c"]));
     IfThenElseCommand ifthen (&(X5 == X3));
