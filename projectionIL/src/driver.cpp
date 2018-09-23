@@ -470,13 +470,13 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     JSONPatternApplication* patapp = (JSONPatternApplication*) astNode;
     fprintf (stderr, "patapp pat '%s'\n", typeid(*patapp->getPattern ()).name());
     
-    IRNode* exp = convertInputToSSAIR (patapp->getExpression (), 
+    IRNode* exp = convertToSSAIR (patapp->getExpression (), 
                                        currBasicBlock, idVersions, 
                                        bbVersionMap);
     IRNode* pat = convertToSSAIR (patapp->getPattern (), currBasicBlock, idVersions, bbVersionMap);
     assert (dynamic_cast <Pattern*> (pat) != nullptr);
-    assert (dynamic_cast <Identifier*> (exp) != nullptr);
-    return new PatternApplication ((Identifier*)exp, (Pattern*)pat);
+    assert (dynamic_cast <Expression*> (exp) != nullptr);
+    return new PatternApplication ((Expression*)exp, (Pattern*)pat);
   } else if (dynamic_cast <FieldGetJSONPattern*> (astNode) != nullptr) {
     FieldGetJSONPattern* pat = (FieldGetJSONPattern*)astNode;
     return new FieldGetPattern (pat->getFieldName ());
@@ -830,23 +830,39 @@ void jsonLivenessAnalysis (Program* program)
         assign = (Assignment*) use;
         
         if (dynamic_cast <PatternApplication*> (((Assignment*)use)->getInput ()) != nullptr) {
-          PatternApplication* patApp;
-          
-          patApp = (PatternApplication*)(((Assignment*)use)->getInput ());
           if (idToPatterns.count (id) == 0) {
             idToPatterns[id] = std::vector<std::vector<Pattern*>> ();
           }
           
-          if (dynamic_cast <ArrayIndexPattern*> (patApp->getPattern()) != nullptr) {
-            idToPatterns.erase (id);
-            fullyUsedId.insert (id);
-            break;
+          //Get all the patterns used in this use satement
+          PatternApplication* patApp;
+          std::vector<Pattern*> allPats;
+                    
+          patApp = (PatternApplication*)((Assignment*)use)->getInput ();
+          allPats = patApp->getAllPatterns ();
+          bool foundArrayIndexPat = false;
+          
+          for (auto pat : allPats) {
+            if (dynamic_cast <ArrayIndexPattern*> (((PatternApplication*)patApp)->getPattern()) != nullptr) {
+              idToPatterns.erase (id);
+              fullyUsedId.insert (id);
+              foundArrayIndexPat = true;
+              break;
+            }
           }
           
-          patternsForUse.push_back (patApp->getPattern ());
+          if (foundArrayIndexPat)
+            break;
+            
+          std::vector<Pattern*> patternsForUse = allPats;
+          
+          //TODO: Write a better comment
+          //Get all the patterns from the use of this variable 
+          //and other defined temp variables
           std::string nextId = assign->getOutput ()->getIDWithVersion ();
           std::queue <std::string> nextIdQueue;
           nextIdQueue.push (nextId);
+          
           while (nextIdQueue.empty () == false) {
             nextId = nextIdQueue.front ();
             nextIdQueue.pop ();
@@ -856,14 +872,26 @@ void jsonLivenessAnalysis (Program* program)
                 if (dynamic_cast <PatternApplication*> (((Assignment*)nextIdUse)->getInput ()) != nullptr) {
                   Assignment* a;
                   a = (Assignment*)nextIdUse;
-                  Pattern* pat = ((PatternApplication*)a->getInput ())->getPattern ();
-                  if (dynamic_cast <ArrayIndexPattern*> (pat) != nullptr) {
+
+                  PatternApplication* patApp = (PatternApplication*)((Assignment*)use)->getInput ();
+                  bool foundArrayIndexPat = false;
+                  
+                  std::vector<Pattern*> allPats = patApp->getAllPatterns ();
+
+                  for (auto pat : allPats) {
+                    if (dynamic_cast <ArrayIndexPattern*> (((PatternApplication*)patApp)->getPattern()) != nullptr) {
+                      foundArrayIndexPat = true;
+                      break;
+                    }
+                  }
+
+                  if (foundArrayIndexPat) {
                     idToPatterns.erase (id);
                     fullyUsedId.insert (id);
                     break;
                   } else {
+                    patternsForUse.insert (patternsForUse.begin (), allPats.begin (), allPats.end ());
                     nextIdQueue.push (a->getOutput ()->getIDWithVersion ());
-                    patternsForUse.push_back (pat);
                   }
                 }
               }
@@ -892,31 +920,37 @@ void jsonLivenessAnalysis (Program* program)
   for (auto id : idToPatterns) {
     std::vector<std::string> unionOfJSONs;
     for (auto patternVec : id.second) {
-      std::stringstream ss;
-      
-      ss << "{";
+      std::stringstream newJSONObj;
+      std::stringstream patternForJSONObj;
+      //TODO: We are hardcoding ".input" here. Need to improve it.
+        
+      //Create a new object with only require fields and a pattern
+      //to get only required fields.
+      patternForJSONObj << ".input";
+      newJSONObj << "{";
       for (int i = 0; i < patternVec.size (); i++) {
         Pattern* pattern = patternVec[i];
         if (dynamic_cast <KeyGetPattern*> (pattern) != nullptr) {
-          ss << R"(\")" << ((KeyGetPattern*)pattern)->getKeyName () << R"(\")" << ": ";
+          newJSONObj << R"(\")" << ((KeyGetPattern*)pattern)->getKeyName () << R"(\")" << ": ";
         } else if (dynamic_cast <FieldGetPattern*> (pattern) != nullptr) {
-          ss << R"(\")" << ((FieldGetPattern*)pattern)->getFieldName () << R"(\")" << ": ";
+          newJSONObj << R"(\")" << ((FieldGetPattern*)pattern)->getFieldName () << R"(\")" << ": ";
         }
         
-        //TODO: We are hardcoding ".input" here. Really need to improve it.
-        ss << ".input";
-        ss << pattern->convert ();
-        if (i != patternVec.size () - 1)
-          ss << ",";
+        newJSONObj << "{";
+        patternForJSONObj << pattern->convert ();
       }
       
-      ss << "}";
+      newJSONObj << patternForJSONObj.str ();
+      for (int i = 0; i < patternVec.size (); i++) {
+        newJSONObj << "}";
+      }
       
-      unionOfJSONs.push_back (ss.str ());
+      unionOfJSONs.push_back (newJSONObj.str ());
     }
     
     std::string finalString = "";
     for (int i = 0; i < unionOfJSONs.size () - 1 ; i++) {
+      //For more than one use create a union of all fields.
       finalString = finalString + unionOfJSONs[i] + " * ";
     }
     

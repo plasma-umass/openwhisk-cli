@@ -1311,17 +1311,17 @@ public:
 class PatternApplication : public Expression
 {
 private:
-  Identifier* expr;
+  Expression* expr;
   Pattern* pat;
   
 public:
-  PatternApplication (Identifier* _expr, Pattern* _pat): expr(_expr), pat(_pat)
+  PatternApplication (Expression* _expr, Pattern* _pat): expr(_expr), pat(_pat)
   {
   }
   
   Pattern* getPattern () {return pat;}
   
-  Identifier* getIdentifier () {return expr;}
+  Expression* getIdentifier () {return expr;}
   
   virtual void print (std::ostream& os) 
   {
@@ -1345,6 +1345,21 @@ public:
   virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
   {
     visitor->visit (this, arg);
+  }
+  
+  std::vector<Pattern*> getAllPatterns ()
+  {
+    std::vector<Pattern*> allPatterns;
+    Expression* patApp = this;
+
+    while (dynamic_cast <PatternApplication*> (patApp) != nullptr) {
+      Pattern* pat = ((PatternApplication*)patApp)->getPattern ();
+      
+      allPatterns.insert (allPatterns.begin(), ((PatternApplication*)patApp)->getPattern ()); //Insert in reverse order
+      patApp = ((PatternApplication*)patApp)->getIdentifier ();
+    }
+    
+    return allPatterns;
   }
 };
 
