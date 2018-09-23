@@ -79,11 +79,11 @@ public:
 class WhiskFork : public ServerlessFork
 {
 public:
-  WhiskFork (std::string name, std::string _innerActionName, std::string _returnName) : ServerlessFork (name, _innerActionName, _returnName)
+  WhiskFork (std::string name, std::string _innerActionName, std::string _returnName, std::string requiredFields) : ServerlessFork (name, _innerActionName, _returnName, requiredFields)
   {
   }
   
-  WhiskFork (std::string name, ServerlessAction* _innerAction, std::string _returnName) : ServerlessFork (name, _innerAction, _returnName)
+  WhiskFork (std::string name, ServerlessAction* _innerAction, std::string _returnName, std::string requiredFields) : ServerlessFork (name, _innerAction, _returnName, requiredFields)
   {
   }
   
@@ -96,7 +96,11 @@ public:
     assert (getProjectionTempFile (temp, 256) != -1);
     char code[2048];
     resultProjectionName = "Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH);
-    sprintf (code, R"(. * {\"saved\": {\"%s\": .input}})", returnName.c_str());
+    if (requiredFields != "") {
+      sprintf (code, R"(. * {\"saved\": {\"%s\": %s}})", returnName.c_str(), requiredFields.c_str ());
+    } else {
+      sprintf (code, R"(. * {\"saved\": {\"%s\": .input}})", returnName.c_str());
+    }
     os << ECHO(code) << " > " << temp << std::endl;
     os << WHISK_CLI_PATH << " " WHISK_CLI_ARGS << " action update " << 
        resultProjectionName << " --projection " << temp << std::endl;

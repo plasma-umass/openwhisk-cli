@@ -69,15 +69,16 @@ protected:
   ServerlessAction* innerAction;
   std::string resultProjectionName;
   std::string returnName;
+  std::string requiredFields;
   
 public:
-  ServerlessFork (std::string name, std::string _innerActionName, std::string _returnName) : 
-    ServerlessAction(name), innerActionName(_innerActionName), returnName(_returnName)
+  ServerlessFork (std::string name, std::string _innerActionName, std::string _returnName, std::string _requiredFields) : 
+    ServerlessAction(name), innerActionName(_innerActionName), returnName(_returnName), requiredFields(_requiredFields)
   {
   }
   
-  ServerlessFork (std::string name, ServerlessAction* _innerAction, std::string _returnName) : 
-    ServerlessAction(name), innerAction(_innerAction), returnName (_returnName)
+  ServerlessFork (std::string name, ServerlessAction* _innerAction, std::string _returnName, std::string _requiredFields) : 
+    ServerlessAction(name), innerAction(_innerAction), returnName (_returnName), requiredFields(_requiredFields)
   {
     innerActionName = innerAction->getName ();
   }

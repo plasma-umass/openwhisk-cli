@@ -326,8 +326,6 @@ public:
   
   virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
   {
-    return new WhiskProjForkPair (new WhiskProjection (projName, arg->convert ()),
-                                  new WhiskFork (getForkName (), getActionName (), retVal->getIdentifier ()));
   }
   
   std::string getProjName ()

@@ -296,15 +296,35 @@ public:
 
 class Program : public IRNode
 {
+public:
+  typedef std::unordered_map <std::string, std::string> JSONKeyAnalysis;
+  typedef std::unordered_map <std::string, std::unordered_map <BasicBlock*, Instruction*>> LivenessAnalysis;
+  
 private:
   std::vector <BasicBlock*> basicBlocks;
-
+  JSONKeyAnalysis jsonKeyAnalysis;
+  LivenessAnalysis livenessAnalysis;
+  
 public:
   Program (std::vector <BasicBlock*> _basicBlocks) : basicBlocks(_basicBlocks)
   {}
   
   Program ()
   {}
+  
+  LivenessAnalysis& getLivenessAnalysis () {return livenessAnalysis;}
+  JSONKeyAnalysis& getJSONKeyAnalysis () {return jsonKeyAnalysis;}
+  
+  void setJSONKeyAnalysis (JSONKeyAnalysis _jsonKeyAnalysis)
+  {
+    jsonKeyAnalysis = _jsonKeyAnalysis;
+  }
+  
+  void setLivenessAnalysis (LivenessAnalysis _liveness)
+  {
+    livenessAnalysis = _liveness;
+  }
+  
   
   void addBasicBlock (BasicBlock* basicBlock)
   {
@@ -385,7 +405,8 @@ public:
   {
     return new WhiskProjForkPair (new WhiskProjection (projName, R"(. * {\"input\": )"+arg->convert()+"}"),
                                   new WhiskFork (getForkName (), getActionName (), 
-                                  retVal->getIDWithVersion()));
+                                                 retVal->getIDWithVersion(), 
+                                                 program->getJSONKeyAnalysis ()[retVal->getIDWithVersion()]));
   }
   
   std::string getProjName ()
@@ -1356,6 +1377,8 @@ public:
   {
     visitor->visit (this, arg);
   }
+  
+  std::string getFieldName () {return fieldName;}
 };
 
 class ArrayIndexPattern : public Pattern
@@ -1406,7 +1429,7 @@ public:
   
   virtual std::string convert ()
   {
-    return R"([\")" + keyName + R"(\"])";
+    return "." + keyName;
   }
   
   virtual void print (std::ostream& os) 
@@ -1418,6 +1441,8 @@ public:
   {
     visitor->visit (this, arg);
   }
+  
+  std::string getKeyName () {return keyName;}
 };
 
 class Patterns : public Pattern

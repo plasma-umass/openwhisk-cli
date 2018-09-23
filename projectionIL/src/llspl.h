@@ -93,11 +93,11 @@ public:
 class LLSPLFork : public ServerlessFork
 {
 public:
-  LLSPLFork (std::string name, std::string _innerActionName, std::string _returnName) : ServerlessFork (name, _innerActionName, _returnName)
+  LLSPLFork (std::string name, std::string _innerActionName, std::string _returnName) : ServerlessFork (name, _innerActionName, _returnName, "")
   {
   }
   
-  LLSPLFork (std::string name, ServerlessAction* _innerAction, std::string _returnName) : ServerlessFork (name, _innerAction, _returnName)
+  LLSPLFork (std::string name, ServerlessAction* _innerAction, std::string _returnName) : ServerlessFork (name, _innerAction, _returnName, "")
   {
   }
   

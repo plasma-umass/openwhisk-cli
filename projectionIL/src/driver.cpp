@@ -9,6 +9,7 @@
 #include <utility>
 #include <queue>
 #include <algorithm>
+#include <sstream>
 
 #define MAX_SEQ_NAME_SIZE 10
 #define READ_VERSION -1
@@ -784,6 +785,8 @@ void livenessAnalysis (Program* program)
       idToLastDef [strToDef.first] = strToDef.second;
     }
   }
+  
+  program->setLivenessAnalysis (idToLastDef);
 }
 
 void jsonLivenessAnalysis (Program* program)
@@ -796,7 +799,9 @@ void jsonLivenessAnalysis (Program* program)
    
   UseDef useDef;
   UseDefVisitor visitor;
-  std::unordered_map <std::string, std::vector<Pattern*>> idToPatterns;
+  std::unordered_map <std::string, std::vector<std::vector<Pattern*>>> idToPatterns;
+  std::unordered_set<std::string> fullyUsedId;
+  Program::JSONKeyAnalysis requiredPatterns;
   useDef = visitor.getAllUseDef (program);
   for (auto varAndDefs : useDef.getDefs ()) {
     std::string id = varAndDefs.first;
@@ -809,12 +814,16 @@ void jsonLivenessAnalysis (Program* program)
     
     std::unordered_set<Instruction*> uses;
     uses = useDef.getUses () [id];
-    std::cout << "uses for " << id << " are " << uses.size () << std::endl;
+    
     for (auto use : uses) {
       //If any of these uses, use full identifier then we cannot consider
       //this identifier.
       //All the partial uses will come in Patterns and Pattern
       //are assigned through Assignment
+      if (fullyUsedId.count (id) == 1) {
+        continue;
+      }
+      std::vector<Pattern*> patternsForUse;
       if (dynamic_cast <Assignment*> (use) != nullptr) {
         Assignment* assign;
         
@@ -825,10 +834,16 @@ void jsonLivenessAnalysis (Program* program)
           
           patApp = (PatternApplication*)(((Assignment*)use)->getInput ());
           if (idToPatterns.count (id) == 0) {
-            idToPatterns[id] = std::vector<Pattern*> ();
+            idToPatterns[id] = std::vector<std::vector<Pattern*>> ();
           }
           
-          idToPatterns[id].push_back (patApp->getPattern ());
+          if (dynamic_cast <ArrayIndexPattern*> (patApp->getPattern()) != nullptr) {
+            idToPatterns.erase (id);
+            fullyUsedId.insert (id);
+            break;
+          }
+          
+          patternsForUse.push_back (patApp->getPattern ());
           std::string nextId = assign->getOutput ()->getIDWithVersion ();
           std::queue <std::string> nextIdQueue;
           nextIdQueue.push (nextId);
@@ -840,37 +855,76 @@ void jsonLivenessAnalysis (Program* program)
               if (dynamic_cast<Assignment*> (nextIdUse) != nullptr) {
                 if (dynamic_cast <PatternApplication*> (((Assignment*)nextIdUse)->getInput ()) != nullptr) {
                   Assignment* a;
-                  
                   a = (Assignment*)nextIdUse;
-                  nextIdQueue.push (a->getOutput ()->getIDWithVersion ());
-                  idToPatterns[id].push_back (((PatternApplication*)a->getInput ())->getPattern ());
+                  Pattern* pat = ((PatternApplication*)a->getInput ())->getPattern ();
+                  if (dynamic_cast <ArrayIndexPattern*> (pat) != nullptr) {
+                    idToPatterns.erase (id);
+                    fullyUsedId.insert (id);
+                    break;
+                  } else {
+                    nextIdQueue.push (a->getOutput ()->getIDWithVersion ());
+                    patternsForUse.push_back (pat);
+                  }
                 }
               }
             }
           }
+          
+          idToPatterns[id].push_back (patternsForUse);
         } else {
           //For everything else (like assignment of JSON Literal etc.) 
           //consider everything
           idToPatterns.erase (id);
+          fullyUsedId.insert (id);
         }
       } else if (dynamic_cast <Call*> (use) != nullptr) {
         idToPatterns.erase (id);
+        fullyUsedId.insert (id);
       } else if (dynamic_cast <ConditionalBranch*> (use) != nullptr) {
         idToPatterns.erase (id);
+        fullyUsedId.insert (id);
       } else {
         std::cout << __FILE__ << ":" << __LINE__ << ":" << "Didn't consider this case " << typeid (*use).name () << std::endl;
       }
     }
   }
   
-  /*std::cout << "ID TO PATTERNS : " << std::endl;
-  
   for (auto id : idToPatterns) {
-    std::cout << id.first << ":" << std::endl;
-    for (auto pattern : id.second) 
-      pattern->print (std::cout);
-    std::cout << std::endl;
-  }*/
+    std::vector<std::string> unionOfJSONs;
+    for (auto patternVec : id.second) {
+      std::stringstream ss;
+      
+      ss << "{";
+      for (int i = 0; i < patternVec.size (); i++) {
+        Pattern* pattern = patternVec[i];
+        if (dynamic_cast <KeyGetPattern*> (pattern) != nullptr) {
+          ss << R"(\")" << ((KeyGetPattern*)pattern)->getKeyName () << R"(\")" << ": ";
+        } else if (dynamic_cast <FieldGetPattern*> (pattern) != nullptr) {
+          ss << R"(\")" << ((FieldGetPattern*)pattern)->getFieldName () << R"(\")" << ": ";
+        }
+        
+        //TODO: We are hardcoding ".input" here. Really need to improve it.
+        ss << ".input";
+        ss << pattern->convert ();
+        if (i != patternVec.size () - 1)
+          ss << ",";
+      }
+      
+      ss << "}";
+      
+      unionOfJSONs.push_back (ss.str ());
+    }
+    
+    std::string finalString = "";
+    for (int i = 0; i < unionOfJSONs.size () - 1 ; i++) {
+      finalString = finalString + unionOfJSONs[i] + " * ";
+    }
+    
+    finalString = finalString + unionOfJSONs[unionOfJSONs.size() - 1];
+    requiredPatterns[id.first] = finalString;
+  }
+  
+  program->setJSONKeyAnalysis (requiredPatterns);
 }
 
 void optimize (Program* program)
@@ -919,25 +973,28 @@ int main (int *argc, char** argv)
   {
     ComplexCommand cmds;
     JSONInput input;
-    JSONIdentifier X1("X1"), X2("X2"), X3("X3"), X4("X4");
+    JSONIdentifier X1("X1"), X2("X2"), X3("X3"), X4("X4"), X5("X5");
     Action A1 ("A1"), A2 ("A2");
     cmds (A1 (&X1, &input));
     //auto pq = X1[0]["x"];
     //auto qq = pq;
-    cmds (new JSONAssignment (&X2, &X1[0]["x"]));
-    IfThenElseCommand ifthen (&(X2 == 1));
+    cmds (new JSONAssignment (&X2, &X1["x"]["y"]["z"]));
+    cmds (new JSONAssignment (&X3, &X1["a"]["b"]["c"]));
+    cmds (A1 (&X2, &X2));
+    cmds (new JSONAssignment (&X5, &X2["X2_a"]["X2_b"]["X2_c"]));
+    IfThenElseCommand ifthen (&(X5 == X3));
     cmds (&ifthen);
     //~ ifthen.thenStart ()
-    ifthen.getThenBranch() (A2 (&X3, &X2));
+    ifthen.getThenBranch() (A2 (&X3, &X5));
     //~ifthen.thenEnd ()
     //~ifthen.else()
-    ifthen.getElseBranch() (A2 (&X4, &X2));
+    ifthen.getElseBranch() (A2 (&X4, &X5));
     Program* program = convertToSSA (&cmds);
     optimize (program);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
-    std::vector<LLSPLSequence*> seqs;
-    LLSPLProgram* p = (LLSPLProgram*)program->convertToLLSPL (seqs);
+    std::vector<WhiskSequence*> seqs;
+    WhiskProgram* p = (WhiskProgram*)program->convert (program, seqs);
     p->generateCommand (std::cout);
     //~ seqs[0]->print ();
     std::cout << std::endl;
