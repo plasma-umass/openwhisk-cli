@@ -570,31 +570,42 @@ public:
 class Return : public Instruction
 {
 private:
-  Expression* exp;
+  Identifier* exp;
+  std::string name;
   
 public:
-  Return (Expression* _exp) : Instruction ()
+  Return (Identifier* _exp) : Instruction ()
   {
     exp = _exp;
+    name = "Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH);
   }
   
-  Expression* getReturnExpr() {return exp;}
+  Identifier* getReturnExpr() {return exp;}
   
   virtual LLSPLAction* convertToLLSPL (std::vector<LLSPLSequence*>& basicBlockCollection)
   {
-    return new LLSPLProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
-                                getReturnExpr ()->convert ());
+    return new LLSPLProjection (name, getReturnExpr ()->convert ());
   }
   
   virtual WhiskAction* convert (Program* program, std::vector<WhiskSequence*>& basicBlockCollection)
   {
-    return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
-                                getReturnExpr ()->convert ());
+    return new WhiskProjection (name, getReturnExpr ()->convert ());
   }
   
   virtual void accept(IRNodeVisitor* visitor, IRNodeVisitorArg arg)
   {
     visitor->visit (this, arg);
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "return ";
+    exp->print (os);
+  }
+  
+  virtual std::string getActionName ()
+  {
+    return name;
   }
 };
 

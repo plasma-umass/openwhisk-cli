@@ -292,6 +292,8 @@ void updateVersionNumberInBB (BasicBlock* basicBlock,
         ld = (LoadPointer*) instr;
         ld->getRetVal ()->setVersion (updateVersionNumber (((Identifier*)ld->getRetVal ())->getID (),
                                   idVersions, bbVersionMap[basicBlock]));
+      } else if (dynamic_cast <Return*> (instr) != nullptr) {
+        updateVersionNumberInSSA (((Return*)instr)->getReturnExpr (), basicBlock, idVersions, bbVersionMap, phiNodePair);
       } else {
         fprintf (stderr, "Type '%s' not implemented\n", typeid (*instr).name());
         abort ();
@@ -367,11 +369,6 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
         //~ return createNewIdentifier (identifierForVersion (jsonId->getIdentifier (), idVersions));
       //~ }
     }
-  } else if (dynamic_cast <ReturnJSON*> (astNode) != nullptr) {
-    ReturnJSON* retJson;
-    
-    retJson = dynamic_cast <ReturnJSON*> (astNode);
-    abort (); //return new Return ((Expression*)convertToSSAIR (retJson->getReturnExpr ()));
   } else if (dynamic_cast <CallAction*> (astNode) != nullptr) {
     CallAction* callAction;
     std::string newOutputID;
@@ -511,6 +508,15 @@ IRNode* convertToSSAIR (ASTNode* astNode, BasicBlock* currBasicBlock,
     
     return new Conditional ((Expression*)op1, cond->getOperator (), 
                             (Expression*)op2);
+  } else if (dynamic_cast <ReturnJSON*> (astNode) != nullptr) {
+    ReturnJSON* returnStmt;
+    
+    returnStmt = (ReturnJSON*)astNode;
+    IRNode* exp = convertInputToSSAIR (returnStmt->getReturnExpr (),
+                                       currBasicBlock, idVersions,
+                                       bbVersionMap);
+    assert (dynamic_cast <Identifier*> (exp) != nullptr);
+    return new Return ((Identifier*)exp);
   } else {
     fprintf (stderr, "Invalid AstNode type '%s'\n", typeid(*astNode).name());
     abort ();
@@ -696,7 +702,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
   return firstBasicBlock;
 }
 
-Program* convertToSSA (ComplexCommand* cmd)
+Program* convertToSSA (ComplexCommand* cmd, bool print_ssa = false)
 {
   BasicBlockVersionMap bbVersionMap;
   VersionMap idVersions;
@@ -709,8 +715,10 @@ Program* convertToSSA (ComplexCommand* cmd)
   auto it = std::find (basicBlocks.begin(), basicBlocks.end(), firstBasicBlock);
   basicBlocks.erase (it);
   basicBlocks.insert (basicBlocks.begin(), firstBasicBlock);
-  for (auto bb : basicBlocks) {
-    bb->print (std::cout);
+  if (print_ssa) {
+    for (auto bb : basicBlocks) {
+      bb->print (std::cout);
+    }
   }
   
   return new Program (basicBlocks);
@@ -967,6 +975,7 @@ void optimize (Program* program)
   jsonLivenessAnalysis (program);
 }
 
+
 int main (int *argc, char** argv)
 {
   //Sequence of 10
@@ -975,16 +984,16 @@ int main (int *argc, char** argv)
     ComplexCommand cmds;
     JSONInput input;
     JSONIdentifier X1 ("X1");
-    Action A1 ("infiniteLoop1");
-    Action A2 ("infiniteLoop2");
-    Action A3 ("infiniteLoop3");
-    Action A4 ("infiniteLoop4");
-    Action A5 ("infiniteLoop5");
-    Action A6 ("infiniteLoop6");
-    Action A7 ("infiniteLoop7");
-    Action A8 ("infiniteLoop8");
-    Action A9 ("infiniteLoop9");
-    Action A10 ("infiniteLoop10");
+    Action A1 ("A1");
+    Action A2 ("A1");
+    Action A3 ("A1");
+    Action A4 ("A1");
+    Action A5 ("A1");
+    Action A6 ("A1");
+    Action A7 ("A1");
+    Action A8 ("A1");
+    Action A9 ("A1");
+    Action A10 ("A1");
     cmds (A1 (&X1, &input));
     cmds (A2 (&X1, &X1));
     cmds (A3 (&X1, &X1));
@@ -995,14 +1004,16 @@ int main (int *argc, char** argv)
     cmds (A8 (&X1, &X1));
     cmds (A9 (&X1, &X1));
     cmds (A10 (&X1, &X1));
-    program1 = convertToSSA (&cmds);
-    optimize (program1);
+    ReturnJSON r (&X1);
+    cmds (&r);
+    program1 = convertToSSA (&cmds, false);
+    //optimize (program1);
     std::vector <WhiskSequence*> seqs;
     WhiskProgram* p = (WhiskProgram*)program1->convert (program1, seqs);
     p->generateCommand (std::cout);
     std::cout << std::endl;
   }
-  
+  return 0;
   //test0  
   {
     ComplexCommand cmds;
@@ -1029,7 +1040,7 @@ int main (int *argc, char** argv)
     //firstBlock->print (std::cout);
     std::vector<WhiskSequence*> seqs;
     WhiskProgram* p = (WhiskProgram*)program->convert (program, seqs);
-    p->generateCommand (std::cout);
+    //p->generateCommand (std::cout);
     //~ seqs[0]->print ();
     std::cout << std::endl;
   }
@@ -1054,7 +1065,7 @@ int main (int *argc, char** argv)
     //firstBlock->print (std::cout);
     std::vector<LLSPLSequence*> seqs;
     LLSPLProgram* p = (LLSPLProgram*)program->convertToLLSPL (seqs);
-    p->generateCommand (std::cout);
+    //p->generateCommand (std::cout);
     //~ seqs[0]->print ();
     std::cout << std::endl;
   }
@@ -1081,18 +1092,20 @@ int main (int *argc, char** argv)
     ComplexCommand cmd1(v);
     
     Program* program = convertToSSA (&cmd1);
-    optimize (program);
+    //optimize (program);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
     std::cout << std::endl;
     
-    std::vector<LLSPLSequence*> seqs;
-    LLSPLAction * p = program->convertToLLSPL (seqs);
+    std::vector<WhiskSequence*> seqs;
+    WhiskAction * p = program->convert (program, seqs);
     p->generateCommand (std::cout);
     
     //~ seqs[0]->print ();
     std::cout << std::endl;
   }
+  
+  return 0;
   
   identifiers.clear ();
    {

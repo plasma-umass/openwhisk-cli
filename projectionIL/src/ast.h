@@ -276,13 +276,13 @@ public:
   }
 };
 
-class ReturnJSON : public Command
+class ReturnJSON : public SimpleCommand
 {
 private:
   JSONExpression* exp;
   
 public:
-  ReturnJSON (JSONExpression* _exp) : Command (ReturnCommandType)
+  ReturnJSON (JSONExpression* _exp) : SimpleCommand ()
   {
     exp = _exp;
   }
@@ -293,6 +293,17 @@ public:
   {
     return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
                                 getReturnExpr ()->convert ());
+  }
+  
+  virtual void print (std::ostream& os)
+  {
+    os << "return ";
+    exp->print (os);
+  }
+  
+  virtual std::string getActionName ()
+  {
+    return "";
   }
 };
 
