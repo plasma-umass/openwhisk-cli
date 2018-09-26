@@ -463,9 +463,19 @@ void UseDefVisitor::visit (Program* prog, IRNodeVisitorArg arg)
   }
 }
 
-//void UseDefVisitor::visit (Return* ret, IRNodeVisitorArg arg) {std::cout <<__FILE__ << ":" << __LINE__ << ": Not Implemented" << std::endl;}
+void UseDefVisitor::visit (Return* ret, IRNodeVisitorArg arg)
+{
+  GetAllInputIdentifierVisitor idsVisitor;
+  
+  std::vector<Identifier*> ids = idsVisitor.getAllInputIds (ret->getReturnExpr ());
+  for (auto id : ids) {
+    argToUseDef (arg)->addUse (id->getIDWithVersion (), ret);
+  }
+}
+
 void UseDefVisitor::visit (StorePointer* strPtr, IRNodeVisitorArg arg)
 {
+  
 }
 
 void UseDefVisitor::visit (String* str, IRNodeVisitorArg arg) {}

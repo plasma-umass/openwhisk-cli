@@ -557,7 +557,7 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
   BasicBlock* currBasicBlock = firstBasicBlock;
   basicBlocks.push_back (firstBasicBlock);
   
-  for (auto cmd : complexCmd->getSimpleCommands()) {    
+  for (auto cmd : complexCmd->getSimpleCommands()) {
     if (dynamic_cast <IfThenElseCommand*> (cmd) != nullptr) {
       BasicBlock* thenBasicBlock;
       BasicBlock* elseBasicBlock;
@@ -566,14 +566,18 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       IRNode* cond;
       BasicBlock* target;
       PHINodePair phiPair;
+      BasicBlock* exitBlockForThen;
+      BasicBlock* exitBlockForElse;
+      
+      exitBlockForThen = exitBlockForElse = nullptr;
       
       ifThenElsecmd = dynamic_cast <IfThenElseCommand*> (cmd);
       thenBasicBlock = convertToBasicBlock (&ifThenElsecmd->getThenBranch (), 
                                             basicBlocks, idVersions, 
-                                            bbVersionMap, nullptr);
+                                            bbVersionMap, &exitBlockForThen);
       elseBasicBlock = convertToBasicBlock (&ifThenElsecmd->getElseBranch (), 
                                             basicBlocks, idVersions, 
-                                            bbVersionMap, nullptr);
+                                            bbVersionMap, &exitBlockForElse);
       cond = convertToSSAIR (ifThenElsecmd->getCondition (), 
                              currBasicBlock, idVersions, 
                              bbVersionMap);
@@ -582,13 +586,16 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
                                       elseBasicBlock, currBasicBlock);
       currBasicBlock->appendInstruction (condBr);
       target = new BasicBlock ();
-      thenBasicBlock->appendInstruction (new DirectBranch (target, thenBasicBlock));
-      elseBasicBlock->appendInstruction (new DirectBranch (target, elseBasicBlock));
+      if (exitBlockForThen == nullptr)
+        exitBlockForThen = thenBasicBlock;
+      exitBlockForThen->appendInstruction (new DirectBranch (target, exitBlockForThen));
+      if (exitBlockForElse == nullptr)
+        exitBlockForElse = elseBasicBlock;
+      exitBlockForElse->appendInstruction (new DirectBranch (target, exitBlockForElse));
       currBasicBlock = target;
       if (exitBlock != nullptr)
         *exitBlock = target;
       basicBlocks.push_back (target);
-      
     } else if (dynamic_cast <WhileLoop*> (cmd) != nullptr) {
       WhileLoop* loop;
       BasicBlock* testBB;
@@ -689,6 +696,16 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
       condBr = new ConditionalBranch ((Conditional*)cond, loopBody, loopExit, testBB);
       testBB->appendInstruction (condBr);
       currBasicBlock = loopExit;
+    } else if (dynamic_cast <ReturnJSON*>  (cmd) != nullptr) {
+      IRNode* ret;
+      
+      ret = convertToSSAIR (cmd, currBasicBlock, idVersions, bbVersionMap);
+      assert (dynamic_cast <Return*> (ret) != nullptr);
+      currBasicBlock->appendInstruction ((Instruction*)ret);
+      currBasicBlock = new BasicBlock ();
+      basicBlocks.push_back (currBasicBlock);
+      if (exitBlock != nullptr)
+        *exitBlock = currBasicBlock;
     } else {
       PHINodePair phiPair;
       Instruction* ssaInstr;
@@ -699,6 +716,8 @@ BasicBlock* convertToBasicBlock (ComplexCommand* complexCmd,
     }
   }
   
+  if (exitBlock != nullptr && *exitBlock == nullptr)
+    *exitBlock = firstBasicBlock;
   return firstBasicBlock;
 }
 
@@ -919,7 +938,11 @@ void jsonLivenessAnalysis (Program* program)
       } else if (dynamic_cast <ConditionalBranch*> (use) != nullptr) {
         idToPatterns.erase (id);
         fullyUsedId.insert (id);
-      } else {
+      } else if (dynamic_cast <Return*> (use) != nullptr) {
+        idToPatterns.erase (id);
+        fullyUsedId.insert (id);
+      }
+        else {
         std::cout << __FILE__ << ":" << __LINE__ << ":" << "Didn't consider this case " << typeid (*use).name () << std::endl;
       }
     }
@@ -1013,13 +1036,47 @@ int main (int *argc, char** argv)
     p->generateCommand (std::cout);
     std::cout << std::endl;
   }
-  return 0;
+  
   //test0  
   {
     ComplexCommand cmds;
     JSONInput input;
     JSONIdentifier X1("X1"), X2("X2"), X3("X3"), X4("X4"), X5("X5");
-    Action A1 ("A1"), A2 ("A2");
+    Action A1 ("A1"), A2 ("A2"), A3 ("A3");
+    cmds (A1 (&X1, &input));
+    //auto pq = X1[0]["x"];
+    //auto qq = pq;
+    cmds (new JSONAssignment (&X2, &X1["x"]["y"]["z"]));
+    cmds (new JSONAssignment (&X3, &X1["x"]["y"]["c"]));
+    cmds (A1 (&X2, &X2));
+    cmds (new JSONAssignment (&X5, &X2["X2_a"]["X2_b"]["X2_c"]));
+    IfThenElseCommand ifthen (&(X5 == X3));
+    WhileLoop loop (&(X1 < 10), new CallAction (&X1, "A2", &X1));
+    cmds (&ifthen);
+    //~ ifthen.thenStart ()
+    ifthen.getThenBranch() (A2 (&X3, &X5));
+    ifthen.getThenBranch() (&loop);
+    //~ifthen.thenEnd ()
+    //~ifthen.else()
+    ifthen.getElseBranch() (A2 (&X4, &X5));
+    Program* program = convertToSSA (&cmds, true);
+    optimize (program);
+    //convertToSSA (firstBlock);
+    //firstBlock->print (std::cout);
+    std::vector<WhiskSequence*> seqs;
+    WhiskProgram* p = (WhiskProgram*)program->convert (program, seqs);
+    p->generateCommand (std::cout);
+    //~ seqs[0]->print ();
+    std::cout << std::endl;
+  }
+  return 0;
+  
+  //test0  
+  {
+    ComplexCommand cmds;
+    JSONInput input;
+    JSONIdentifier X1("X1"), X2("X2"), X3("X3"), X4("X4"), X5("X5");
+    Action A1 ("A1"), A2 ("A2"), A3 ("A3");
     cmds (A1 (&X1, &input));
     //auto pq = X1[0]["x"];
     //auto qq = pq;
@@ -1031,20 +1088,25 @@ int main (int *argc, char** argv)
     cmds (&ifthen);
     //~ ifthen.thenStart ()
     ifthen.getThenBranch() (A2 (&X3, &X5));
+    IfThenElseCommand ifThen2 (&(X3 == X1));
+    ifThen2.getThenBranch () (A3 (&X3, &X1));
+    ReturnJSON r (&X3);
+    ifThen2.getThenBranch () (&r);
+    ifthen.getThenBranch() (&ifThen2);
     //~ifthen.thenEnd ()
     //~ifthen.else()
     ifthen.getElseBranch() (A2 (&X4, &X5));
-    Program* program = convertToSSA (&cmds);
+    Program* program = convertToSSA (&cmds, true);
     optimize (program);
     //convertToSSA (firstBlock);
     //firstBlock->print (std::cout);
     std::vector<WhiskSequence*> seqs;
     WhiskProgram* p = (WhiskProgram*)program->convert (program, seqs);
-    //p->generateCommand (std::cout);
+    p->generateCommand (std::cout);
     //~ seqs[0]->print ();
     std::cout << std::endl;
   }
-  
+  return 0;
   //test1
   {
     //~ // X1 = A1 (input)

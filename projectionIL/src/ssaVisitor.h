@@ -189,7 +189,7 @@ public:
   virtual void visit (Patterns* pts, IRNodeVisitorArg arg) ;
   virtual void visit (Pointer* ptr, IRNodeVisitorArg arg) ;
   virtual void visit (Program* prog, IRNodeVisitorArg arg) ;
-  virtual void visit (Return* ret, IRNodeVisitorArg arg) {std::cout <<__FILE__ << ":" << __LINE__ << ": Not Implemented" << std::endl;}
+  virtual void visit (Return* ret, IRNodeVisitorArg arg);
   virtual void visit (StorePointer* strPtr, IRNodeVisitorArg arg) ;
   virtual void visit (String* str, IRNodeVisitorArg arg);
 };

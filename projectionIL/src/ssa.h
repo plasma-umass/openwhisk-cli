@@ -601,6 +601,7 @@ public:
   {
     os << "return ";
     exp->print (os);
+    os << std::endl;
   }
   
   virtual std::string getActionName ()
