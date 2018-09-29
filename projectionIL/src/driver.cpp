@@ -843,61 +843,68 @@ void jsonLivenessAnalysis (Program* program)
           //Get all the patterns used in this use satement
           PatternApplication* patApp;
           std::vector<Pattern*> allPats;
+          std::vector<Pattern*> _allPats;
                     
           patApp = (PatternApplication*)((Assignment*)use)->getInput ();
           allPats = patApp->getAllPatterns ();
           bool foundArrayIndexPat = false;
           
-          for (auto pat : allPats) {
-            if (dynamic_cast <ArrayIndexPattern*> (((PatternApplication*)patApp)->getPattern()) != nullptr) {
-              idToPatterns.erase (id);
-              fullyUsedId.insert (id);
+          for (auto iter = allPats.begin(); iter != allPats.end(); ++iter) {
+            Pattern* pat = *iter;
+            
+            if (dynamic_cast <ArrayIndexPattern*> (pat) != nullptr) {
+              //idToPatterns.erase (id);
+              //fullyUsedId.insert (id);
               foundArrayIndexPat = true;
               break;
             }
+            
+            _allPats.push_back (pat);
           }
-          
-          if (foundArrayIndexPat)
-            break;
             
-          std::vector<Pattern*> patternsForUse = allPats;
+          std::vector<Pattern*> patternsForUse = _allPats;
           
-          //TODO: Write a better comment
-          //Get all the patterns from the use of this variable 
-          //and other defined temp variables
-          std::string nextId = assign->getOutput ()->getIDWithVersion ();
-          std::queue <std::string> nextIdQueue;
-          nextIdQueue.push (nextId);
-          
-          while (nextIdQueue.empty () == false) {
-            nextId = nextIdQueue.front ();
-            nextIdQueue.pop ();
+          if (!foundArrayIndexPat) {
+            //TODO: Write a better comment
+            //Get all the patterns from the use of this variable 
+            //and other defined temp variables
+            std::string nextId = assign->getOutput ()->getIDWithVersion ();
+            std::queue <std::string> nextIdQueue;
+            nextIdQueue.push (nextId);
             
-            for (auto nextIdUse : useDef.getUses ()[nextId]) {
-              if (dynamic_cast<Assignment*> (nextIdUse) != nullptr) {
-                if (dynamic_cast <PatternApplication*> (((Assignment*)nextIdUse)->getInput ()) != nullptr) {
-                  Assignment* a;
-                  a = (Assignment*)nextIdUse;
-
-                  PatternApplication* patApp = (PatternApplication*)((Assignment*)use)->getInput ();
-                  bool foundArrayIndexPat = false;
-                  
-                  std::vector<Pattern*> allPats = patApp->getAllPatterns ();
-
-                  for (auto pat : allPats) {
-                    if (dynamic_cast <ArrayIndexPattern*> (((PatternApplication*)patApp)->getPattern()) != nullptr) {
-                      foundArrayIndexPat = true;
-                      break;
+            while (nextIdQueue.empty () == false) {
+              nextId = nextIdQueue.front ();
+              nextIdQueue.pop ();
+              //Explore next temp variables in a level order fashion
+              for (auto nextIdUse : useDef.getUses ()[nextId]) {
+                if (dynamic_cast<Assignment*> (nextIdUse) != nullptr) {
+                  if (dynamic_cast <PatternApplication*> (((Assignment*)nextIdUse)->getInput ()) != nullptr) {
+                    Assignment* a;
+                    a = (Assignment*)nextIdUse;
+  
+                    PatternApplication* patApp = (PatternApplication*)((Assignment*)use)->getInput ();
+                    bool foundArrayIndexPat = false;
+                    
+                    std::vector<Pattern*> allPats = patApp->getAllPatterns ();
+                    std::vector<Pattern*> _allPats;
+                    
+                    for (auto pat : allPats) {
+                      if (dynamic_cast <ArrayIndexPattern*> (pat) != nullptr) {
+                        foundArrayIndexPat = true;
+                        break;
+                      }
+                      
+                      _allPats.push_back (pat);
                     }
-                  }
-
-                  if (foundArrayIndexPat) {
-                    idToPatterns.erase (id);
-                    fullyUsedId.insert (id);
-                    break;
-                  } else {
-                    patternsForUse.insert (patternsForUse.begin (), allPats.begin (), allPats.end ());
-                    nextIdQueue.push (a->getOutput ()->getIDWithVersion ());
+  
+                    if (foundArrayIndexPat) {
+                      //idToPatterns.erase (id);
+                      //fullyUsedId.insert (id);
+                      break;
+                    } else {
+                      patternsForUse.insert (patternsForUse.begin (), allPats.begin (), allPats.end ());
+                      nextIdQueue.push (a->getOutput ()->getIDWithVersion ());
+                    }
                   }
                 }
               }
@@ -977,10 +984,12 @@ void optimize (Program* program)
   jsonLivenessAnalysis (program);
 }
 
-void convertToWhiskCommands (ComplexCommand& cmds, std::ostream& out, bool print_ssa)
+void convertToWhiskCommands (ComplexCommand& cmds, std::ostream& out, bool to_optimize, bool print_ssa)
 {
   Program* program = convertToSSA (&cmds, print_ssa);
-  //optimize (program1);
+  if (to_optimize) {
+    optimize (program);
+  }
   std::vector <WhiskSequence*> seqs;
   WhiskProgram* p = (WhiskProgram*)program->convert (program, seqs);
   p->generateCommand (out);

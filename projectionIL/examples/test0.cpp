@@ -12,8 +12,8 @@ int main ()
     cmds (A1 (&X1, &input));
     //auto pq = X1[0]["x"];
     //auto qq = pq;
-    cmds (new JSONAssignment (&X2, &X1["x"]["y"]["z"]));
-    cmds (new JSONAssignment (&X3, &X1["x"]["y"]["c"]));
+    cmds (new JSONAssignment (&X2, &X1["x"]["y"]["z"][0]));
+    cmds (new JSONAssignment (&X3, &X1["x"]["y"][0]["c"]));
     cmds (A1 (&X2, &X2));
     cmds (new JSONAssignment (&X5, &X2["X2_a"]["X2_b"]["X2_c"]));
     IfThenElseCommand ifthen (&(X5 == X3));
@@ -25,6 +25,6 @@ int main ()
     //~ifthen.thenEnd ()
     //~ifthen.else()
     ifthen.getElseBranch() (A2 (&X4, &X5));
-    convertToWhiskCommands (cmds, std::cout, true);
+    convertToWhiskCommands (cmds, std::cout, true, true);
   }
 }
