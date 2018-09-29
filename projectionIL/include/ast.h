@@ -729,5 +729,6 @@ public:
   }
 };
 
+void convertToWhiskCommands (ComplexCommand& cmds, std::ostream& out, bool print_ssa = false);
 //TODO: Add complex pattern
 #endif /*__AST_H__*/
