@@ -60,27 +60,6 @@ std::string gen_random_str(const int len)
   return str;
 }
 
-std::vector<WhiskSequence*> Converter::convert (Command* cmd)
-{
-  std::vector<WhiskSequence*> toRet;
-  
-  if (cmd->getType () == Command::SimpleCommandType) {
-    WhiskSequence* seq;
-    seq = new WhiskSequence ("SEQUENCE_" + gen_random_str(WHISK_SEQ_NAME_LENGTH), 
-                             std::vector<WhiskAction*> (1, ((SimpleCommand*)cmd)->convert (toRet)));
-    toRet.push_back (seq);
-  }
-  else if (cmd->getType () == Command::ComplexCommandType) {
-    WhiskAction* act;
-    act = ((ComplexCommand*)cmd)->convert (toRet);
-  }
-  else {
-    fprintf (stderr, "No conversion for %d specified", cmd->getType ());
-  }
-  
-  return toRet;
-}
-
 static std::unordered_map <std::string, Identifier*> identifiers; // <id>_<version> to Identifier*
 Identifier* createNewIdentifier (std::string id, int version)
 {

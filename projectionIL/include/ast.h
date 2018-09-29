@@ -6,8 +6,8 @@
 #include <utility>
 
 #include <assert.h>
-#include "whisk_action.h"
-#include "utils.h"
+
+//#include "utils.h"
 
 #ifndef __AST_H__
 #define __AST_H__
@@ -122,8 +122,6 @@ public:
 class JSONExpression : public ASTNode
 {
 public:
-  virtual std::string convert () = 0;
-
   virtual JSONPatternApplication& operator [] (std::string key);
   virtual JSONPatternApplication& operator [] (const char* key);
   virtual JSONPatternApplication& operator [] (int index);
@@ -169,7 +167,6 @@ public:
   }
   
   void setCallStmt(CallAction* _callStmt);
-  virtual std::string convert ();
   std::string getIdentifier () {return identifier;}
   CallAction* getCallStmt () {return callStmt;}
   
@@ -196,15 +193,12 @@ protected:
 public:
   CommandType getType() {return type;}
   virtual ~Command () {}
-  virtual std::string getActionName () = 0;
-  virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
 };
 
 class SimpleCommand : public Command
 {
 public:
   SimpleCommand (): Command(SimpleCommandType) {}
-  virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection) = 0;
   virtual ~SimpleCommand () {}
 };
 
@@ -213,22 +207,14 @@ class ComplexCommand : public Command
 protected:
   std::vector<SimpleCommand*> cmds;
   std::string actionName;
-  bool converted;
-  WhiskSequence* seq;
     
 public:
   ComplexCommand(std::vector<SimpleCommand*> _cmds): Command (ComplexCommandType), 
                                                     cmds(_cmds)
-  {
-    actionName = "Sequence_" + gen_random_str (WHISK_SEQ_NAME_LENGTH);
-    converted = false;
-  }
+  {}
   
   ComplexCommand(): Command (ComplexCommandType)
-  {
-    converted = false;
-    actionName = "Sequence_" + gen_random_str (WHISK_SEQ_NAME_LENGTH);
-  }
+  {}
   
   void operator () (SimpleCommand* cmd)
   {
@@ -241,27 +227,6 @@ public:
   }
   
   const std::vector<SimpleCommand*>& getSimpleCommands() {return cmds;}
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    std::vector<WhiskAction*> actions;
-    if (converted) {
-      return seq;
-    }
-     
-    converted = true;
-    
-    for (auto cmd : cmds) {
-      WhiskAction* act;
-      act = cmd->convert (basicBlockCollection);
-      actions.push_back (act);
-    }
-    
-    seq = new WhiskSequence (getActionName (), actions);
-    basicBlockCollection.push_back (seq);
-    
-    return seq;
-  }
   
   virtual std::string getActionName ()
   {
@@ -289,12 +254,6 @@ public:
   
   JSONExpression* getReturnExpr() {return exp;}
   
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    return new WhiskProjection ("Proj_" + gen_random_str (WHISK_PROJ_NAME_LENGTH), 
-                                getReturnExpr ()->convert ());
-  }
-  
   virtual void print (std::ostream& os)
   {
     os << "return ";
@@ -314,8 +273,6 @@ protected:
   ActionName actionName;
   JSONExpression* arg;
   static int callID;
-  std::string forkName;
-  std::string projName;
   
 public:
   CallAction(JSONIdentifier* _retVal, ActionName _actionName, JSONExpression* _arg) : 
@@ -323,26 +280,11 @@ public:
   {
     //retVal->setCallStmt(this);
     callID++;
-    forkName = "Fork_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
-    projName = "Proj_" + actionName + "_" + gen_random_str(WHISK_FORK_NAME_LENGTH);
   }
   
   JSONIdentifier* getReturnValue() {return retVal;}
   virtual std::string getActionName() {return actionName;}
   JSONExpression* getArgument() {return arg;}
-  virtual std::string getForkName() 
-  {
-    return forkName;
-  }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-  }
-  
-  std::string getProjName ()
-  {
-    return projName;
-  }
   
   virtual void print (std::ostream& os)
   {
@@ -398,8 +340,6 @@ public:
   JSONExpression* getOp2 () {return op2;}
   ConditionalOperator getOperator () {return op;}
   
-  virtual std::string convert () {}
-  
   static void printConditionalOperator (std::ostream& os, ConditionalOperator op)
   {
     switch (op) {
@@ -445,32 +385,21 @@ class JSONAssignment : public SimpleCommand
 private:
   JSONIdentifier* out;
   JSONExpression* in;
-  std::string name;
   
 public:
   JSONAssignment (JSONIdentifier* _out, JSONExpression* _in) : 
     out(_out), in(_in)
   {
-    name = "Proj_"+gen_random_str(WHISK_PROJ_NAME_LENGTH);
   }
   
   JSONIdentifier* getOutput() {return out;}
   JSONExpression* getInput() {return in;}
-  
-  virtual std::string getActionName ()
-  {
-    return name;
-  }
   
   virtual void print (std::ostream& os)
   {
     out->print (os);
     os << " = ";
     in->print (os);
-  }
-  virtual WhiskAction* convert (std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    abort ();
   }
 };
 
@@ -483,11 +412,6 @@ private:
 public:
   LetCommand (JSONIdentifier* _id, JSONExpression* _expr) : id(_id), expr(_expr) 
   {}
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    
-  }
 };
 
 class IfThenElseCommand : public SimpleCommand
@@ -496,13 +420,11 @@ private:
   JSONConditional* expr;
   ComplexCommand* thenBranch;
   ComplexCommand* elseBranch;
-  std::string seqName;
   
 public:
   IfThenElseCommand (JSONConditional* _expr) 
   {
     expr = _expr;
-    seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
     thenBranch = new ComplexCommand ();
     elseBranch = new ComplexCommand ();
   }
@@ -513,7 +435,6 @@ public:
     expr = _expr;
     thenBranch = _thenBranch;
     elseBranch = _elseBranch;
-    seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
   IfThenElseCommand (JSONConditional* _expr, SimpleCommand* _thenBranch, 
@@ -524,7 +445,6 @@ public:
     thenBranch->appendSimpleCommand (_thenBranch);
     elseBranch = new ComplexCommand ();
     elseBranch->appendSimpleCommand (_elseBranch);
-    seqName = "Seq_IF_THEN_ELSE_"+gen_random_str (WHISK_SEQ_NAME_LENGTH);
   }
   
   ComplexCommand& getThenBranch () 
@@ -551,30 +471,6 @@ public:
   {
     return expr;
   }
-  
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    WhiskAction* proj;
-    WhiskSequence* thenSeq;
-    WhiskSequence* elseSeq;
-    WhiskSequence* toReturn;
-    std::string code;
-    
-    code = expr->convert ();
-    thenSeq = dynamic_cast <WhiskSequence*> (thenBranch->convert(basicBlockCollection));
-    elseSeq = dynamic_cast <WhiskSequence*> (elseBranch->convert(basicBlockCollection));
-    code = "if ("+code+") then . * {\"action\": " + thenSeq->getName () + 
-      "} else . * {\"action\":" + elseSeq->getName () + "}";
-    proj = new WhiskProjection ("Proj_"+gen_random_str (WHISK_PROJ_NAME_LENGTH),
-                                code);
-    toReturn = new WhiskSequence (seqName);
-    toReturn->appendAction (proj);
-    toReturn->appendAction (new WhiskApp ());
-    
-    return toReturn;
-  }
-  
-  virtual std::string getActionName () {return seqName;}
   
   virtual void print (std::ostream& os)
   {
@@ -624,40 +520,6 @@ public:
   }
   
   virtual std::string getActionName () {return "WhileLoop";}
-  virtual WhiskAction* convert(std::vector<WhiskSequence*>& basicBlockCollection)
-  {
-    //While Loop is a sequence of four actions:
-    //1. Projection action. Which sees if the condition is valid and then
-    //    calls other action based on it.
-    //2. Sequence of actions produced by the ComplexCommand inside the while loop.
-    //3. A DirectBranch action to 1.
-    //4. A dummy projection action to break out of the loop.
-    
-    /*WhiskSequence* seq;
-    WhiskSequence* cmdSeq;
-    WhiskProjection* condProj;
-    WhiskProjection* dummyAction;
-    
-    std::string ifcode;
-    std::string thenCode;
-    std::string elseCode;
-    
-    dummyAction = new WhiskProjection ("Proj_LoopEnd_"+gen_random_str(WHISK_PROJ_NAME_LENGTH), ".");
-    cmdSeq = dynamic_cast <WhiskSequence*> (cmds->convert (basicBlockCollection));
-    assert (cmdSeq != nullptr);
-    seq = new WhiskSequence ("WhileLoop_Seq_" + gen_random_str(WHISK_SEQ_NAME_LENGTH));
-    ifcode = "if (" + cond->convert () + " == true) ";
-    thenCode = ". * {\"action\": " + std::string(cmdSeq->getName ()) + "}"; //TODO: Add input
-    elseCode = ". * {\"action\": " + std::string(dummyAction->getName ()) + "}";
-    condProj = new WhiskProjection ("Proj_WhileLoopCond_"+gen_random_str(WHISK_PROJ_NAME_LENGTH),
-                                    ifcode + " then (" + thenCode + ") else (" + elseCode + ")");
-    
-    seq->appendAction (condProj);
-    seq->appendAction (cmdSeq);
-    seq->appendAction (dummyAction);
-    
-    return seq;    */
-  }
 };
 
 class ConstantExpression : public JSONExpression
@@ -672,11 +534,6 @@ private:
 public:
   NumberExpression (float _number) : number(_number)
   {
-  }
-  
-  virtual std::string convert ()
-  {
-    return std::to_string (number);
   }
   
   float getNumber ()
@@ -699,12 +556,7 @@ public:
   StringExpression (std::string _str) : str(_str) 
   {
   }
-  
-  virtual std::string convert ()
-  {
-    return str;
-  }
-  
+
   std::string getString () 
   {
     return str;
@@ -724,16 +576,6 @@ private:
 public:
   BooleanExpression (bool _boolean) : boolean(_boolean) 
   {
-  }
-  
-  virtual std::string convert ()
-  {
-    if (boolean) {
-      return "True";
-    }
-    else {
-      return "False";
-    }
   }
   
   void print (std::ostream& os)
@@ -758,19 +600,6 @@ private:
 public:
   JSONArrayExpression (std::vector<JSONExpression*> _exprs): exprs(_exprs) 
   {
-  }
-  
-  virtual std::string convert ()
-  {
-    std::string to_ret;
-    
-    to_ret = "[";
-    
-    for (auto expr : exprs) {
-      to_ret += expr->convert ();
-    }
-    
-    to_ret = "]";
   }
 };
 
@@ -799,21 +628,6 @@ public:
   {
   }
   
-  virtual std::string convert ()
-  {
-    std::string to_ret;
-    
-    to_ret = "{";
-    
-    for (auto kvpair : kvpairs) {
-      to_ret = R"(\")" + kvpair->getKey () + R"(\":)" + kvpair->getValue ()->convert (); 
-    }
-    
-    to_ret = "}";
-    
-    return to_ret;
-  }
-  
   std::vector<KeyValuePair*>& getKVPairs ()
   {
     return kvpairs;
@@ -824,16 +638,11 @@ class JSONInput : public JSONIdentifier
 {
 public:
   JSONInput () : JSONIdentifier ("input") {}
-  std::string convert ()
-  {    
-    return ".saved.input";
-  }
 };
 
 class JSONPattern : public ASTNode
 {
 public:
-  virtual std::string convert () = 0;
 };
 
 class JSONPatternApplication : public JSONExpression
@@ -854,11 +663,6 @@ public:
   {
     expr->print(os);
     pat->print(os);
-  }
-  
-  virtual std::string convert () 
-  {
-    return getExpression ()->convert () + getPattern ()->convert ();
   }
 };
 
@@ -881,11 +685,6 @@ public:
   {
     os << "." << fieldName;
   }
-  
-  virtual std::string convert ()
-  {
-    return "." + fieldName;
-  }
 };
 
 class ArrayIndexJSONPattern : public JSONPattern
@@ -901,11 +700,6 @@ public:
   int getIndex ()
   {
     return index;
-  }
-  
-  virtual std::string convert ()
-  {
-    return "[" + std::to_string (index) + "]";
   }
   
   virtual void print (std::ostream& os)
@@ -927,11 +721,6 @@ public:
   std::string getKeyName ()
   {
     return keyName;
-  }
-  
-  virtual std::string convert ()
-  {
-    return "[\"" + keyName + "\"]";
   }
   
   virtual void print (std::ostream& os)
