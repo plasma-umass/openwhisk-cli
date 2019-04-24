@@ -1,0 +1,24 @@
+Get swig-3.0.12:
+1. from http://www.swig.org/download.html
+2. cd swig-3.0.12
+3. git apply v8-patch.patch
+4. ./autogen.sh
+5. ./configure
+6. make
+7. sudo make install 
+
+To Generate JS Binding:
+1. swig -c++ -javascript -node ilswig.i
+2. node-gyp rebuild
+
+To Use JS Example
+1. node js_ex.js
+
+
+To Generate Python Binding
+1. swig -python -c++ ilswig.i
+2. g++ -c ilswig_wrap.cxx -I/usr/include/python3.5m/ -std=c++11 -fPIC
+3. g++ -shared ilswig_wrap.o  -o _ilswig.so
+
+Run Python 3 example by: 
+python3 python_ex.py
